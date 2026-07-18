@@ -1,0 +1,551 @@
+     1→'use client';
+     2→import { useState } from 'react';
+     3→import { useAuthStore } from '@/store/use-auth';
+     4→import { useUIStore } from '@/store/use-ui';
+     5→import { Eye, EyeOff, Mail, Lock, User, Phone, ArrowLeft, CheckCircle2 } from 'lucide-react';
+     6→import { toast } from 'sonner';
+     7→
+     8→// ============================
+     9→// LoginPage
+    10→// ============================
+    11→export function LoginPage() {
+    12→  const { login } = useAuthStore();
+    13→  const { navigate } = useUIStore();
+    14→  const [email, setEmail] = useState('');
+    15→  const [password, setPassword] = useState('');
+    16→  const [showPassword, setShowPassword] = useState(false);
+    17→  const [rememberMe, setRememberMe] = useState(false);
+    18→  const [loading, setLoading] = useState(false);
+    19→  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+    20→
+    21→  const validate = () => {
+    22→    const newErrors: { email?: string; password?: string } = {};
+    23→    if (!email.trim()) newErrors.email = 'Email is required';
+    24→    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) newErrors.email = 'Enter a valid email address';
+    25→    if (!password) newErrors.password = 'Password is required';
+    26→    else if (password.length < 6) newErrors.password = 'Password must be at least 6 characters';
+    27→    setErrors(newErrors);
+    28→    return Object.keys(newErrors).length === 0;
+    29→  };
+    30→
+    31→  const handleLogin = async (e: React.FormEvent) => {
+    32→    e.preventDefault();
+    33→    if (!validate()) return;
+    34→    setLoading(true);
+    35→    try {
+    36→      const res = await fetch('/api/auth', {
+    37→        method: 'POST',
+    38→        headers: { 'Content-Type': 'application/json' },
+    39→        body: JSON.stringify({ action: 'login', email, password, rememberMe }),
+    40→      });
+    41→      if (res.ok) {
+    42→        const data = await res.json();
+    43→        login(data.user);
+    44→        toast.success('Login successful! Welcome back.');
+    45→        navigate('home');
+    46→      } else {
+    47→        const err = await res.json();
+    48→        toast.error(err.error || 'Invalid email or password');
+    49→      }
+    50→    } catch {
+    51→      toast.error('Login failed. Please try again.');
+    52→    } finally {
+    53→      setLoading(false);
+    54→    }
+    55→  };
+    56→
+    57→  return (
+    58→    <div className="min-h-[70vh] flex items-center justify-center px-4 py-8">
+    59→      <div className="w-full max-w-md border border-border p-8">
+    60→        <div className="text-center pb-2 mb-6">
+    61→          <h1 className="text-2xl font-semibold tracking-tight">Welcome Back</h1>
+    62→          <p className="text-sm text-muted-foreground mt-1">Sign in to your NextShop account</p>
+    63→        </div>
+    64→        <form onSubmit={handleLogin} className="space-y-4">
+    65→          {/* Email */}
+    66→          <div className="space-y-1.5">
+    67→            <label htmlFor="login-email" className="text-sm font-medium">Email</label>
+    68→            <div className="relative">
+    69→              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+    70→              <input
+    71→                id="login-email"
+    72→                type="email"
+    73→                placeholder="you@example.com"
+    74→                value={email}
+    75→                onChange={(e) => { setEmail(e.target.value); setErrors({ ...errors, email: undefined }); }}
+    76→                className={`w-full h-10 rounded-md border bg-transparent px-3 pl-9 text-sm outline-none transition-colors focus:ring-1 focus:ring-foreground/10 ${errors.email ? 'border-red-500' : 'border-border'}`}
+    77→              />
+    78→            </div>
+    79→            {errors.email && <p className="text-xs text-red-500">{errors.email}</p>}
+    80→          </div>
+    81→
+    82→          {/* Password */}
+    83→          <div className="space-y-1.5">
+    84→            <label htmlFor="login-password" className="text-sm font-medium">Password</label>
+    85→            <div className="relative">
+    86→              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+    87→              <input
+    88→                id="login-password"
+    89→                type={showPassword ? 'text' : 'password'}
+    90→                placeholder="Enter your password"
+    91→                value={password}
+    92→                onChange={(e) => { setPassword(e.target.value); setErrors({ ...errors, password: undefined }); }}
+    93→                className={`w-full h-10 rounded-md border bg-transparent px-3 pl-9 pr-9 text-sm outline-none transition-colors focus:ring-1 focus:ring-foreground/10 ${errors.password ? 'border-red-500' : 'border-border'}`}
+    94→              />
+    95→              <button
+    96→                type="button"
+    97→                onClick={() => setShowPassword(!showPassword)}
+    98→                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+    99→                aria-label={showPassword ? 'Hide password' : 'Show password'}
+   100→              >
+   101→                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+   102→              </button>
+   103→            </div>
+   104→            {errors.password && <p className="text-xs text-red-500">{errors.password}</p>}
+   105→          </div>
+   106→
+   107→          {/* Remember Me & Forgot Password */}
+   108→          <div className="flex items-center justify-between">
+   109→            <label className="flex items-center gap-2 cursor-pointer">
+   110→              <input
+   111→                type="checkbox"
+   112→                checked={rememberMe}
+   113→                onChange={(e) => setRememberMe(e.target.checked)}
+   114→                className="rounded border-border h-4 w-4"
+   115→              />
+   116→              <span className="text-sm text-muted-foreground">Remember me</span>
+   117→            </label>
+   118→            <button
+   119→              type="button"
+   120→              onClick={() => navigate('forgot-password')}
+   121→              className="text-sm text-muted-foreground hover:text-foreground font-medium transition-colors"
+   122→            >
+   123→              Forgot Password?
+   124→            </button>
+   125→          </div>
+   126→
+   127→          {/* Login Button */}
+   128→          <button
+   129→            type="submit"
+   130→            disabled={loading}
+   131→            className="w-full bg-foreground text-background hover:bg-foreground/90 h-11 rounded-md text-sm font-medium transition-colors disabled:opacity-50"
+   132→          >
+   133→            {loading ? (
+   134→              <span className="inline-flex items-center gap-2">
+   135→                <span className="h-4 w-4 animate-spin rounded-full border-2 border-background border-t-transparent" />
+   136→                Signing in...
+   137→              </span>
+   138→            ) : (
+   139→              'Login'
+   140→            )}
+   141→          </button>
+   142→        </form>
+   143→
+   144→        {/* Social Login */}
+   145→        <div className="mt-6">
+   146→          <div className="relative">
+   147→            <div className="border-t border-border" />
+   148→            <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-background px-2 text-xs text-muted-foreground">
+   149→              or continue with
+   150→            </span>
+   151→          </div>
+   152→          <div className="grid grid-cols-2 gap-3 mt-4">
+   153→            <button type="button" className="w-full h-10 bg-muted hover:bg-muted/80 text-foreground rounded-md text-sm font-medium transition-colors inline-flex items-center justify-center gap-2">
+   154→              <svg className="h-4 w-4" viewBox="0 0 24 24">
+   155→                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
+   156→                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+   157→                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+   158→                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+   159→              </svg>
+   160→              Google
+   161→            </button>
+   162→            <button type="button" className="w-full h-10 bg-muted hover:bg-muted/80 text-foreground rounded-md text-sm font-medium transition-colors inline-flex items-center justify-center gap-2">
+   163→              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="#1877F2">
+   164→                <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+   165→              </svg>
+   166→              Facebook
+   167→            </button>
+   168→          </div>
+   169→        </div>
+   170→
+   171→        <div className="justify-center pb-2 pt-6">
+   172→          <p className="text-sm text-muted-foreground text-center">
+   173→            Don&apos;t have an account?{' '}
+   174→            <button
+   175→              onClick={() => navigate('register')}
+   176→              className="text-foreground hover:underline font-medium transition-colors"
+   177→            >
+   178→              Register
+   179→            </button>
+   180→          </p>
+   181→        </div>
+   182→      </div>
+   183→    </div>
+   184→  );
+   185→}
+   186→
+   187→// ============================
+   188→// RegisterPage
+   189→// ============================
+   190→export function RegisterPage() {
+   191→  const { login } = useAuthStore();
+   192→  const { navigate } = useUIStore();
+   193→  const [fullName, setFullName] = useState('');
+   194→  const [email, setEmail] = useState('');
+   195→  const [phone, setPhone] = useState('');
+   196→  const [password, setPassword] = useState('');
+   197→  const [confirmPassword, setConfirmPassword] = useState('');
+   198→  const [showPassword, setShowPassword] = useState(false);
+   199→  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+   200→  const [agreeTerms, setAgreeTerms] = useState(false);
+   201→  const [loading, setLoading] = useState(false);
+   202→  const [errors, setErrors] = useState<Record<string, string>>({});
+   203→
+   204→  const validate = () => {
+   205→    const newErrors: Record<string, string> = {};
+   206→    if (!fullName.trim()) newErrors.fullName = 'Full name is required';
+   207→    if (!email.trim()) newErrors.email = 'Email is required';
+   208→    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) newErrors.email = 'Enter a valid email address';
+   209→    if (!phone.trim()) newErrors.phone = 'Phone number is required';
+   210→    else if (!/^(?:\+880|01)\d{9,10}$/.test(phone.trim())) newErrors.phone = 'Enter a valid BD phone number';
+   211→    if (!password) newErrors.password = 'Password is required';
+   212→    else if (password.length < 6) newErrors.password = 'Password must be at least 6 characters';
+   213→    if (password !== confirmPassword) newErrors.confirmPassword = 'Passwords do not match';
+   214→    if (!agreeTerms) newErrors.terms = 'You must agree to the terms';
+   215→    setErrors(newErrors);
+   216→    return Object.keys(newErrors).length === 0;
+   217→  };
+   218→
+   219→  const handleRegister = async (e: React.FormEvent) => {
+   220→    e.preventDefault();
+   221→    if (!validate()) return;
+   222→    setLoading(true);
+   223→    try {
+   224→      const res = await fetch('/api/auth', {
+   225→        method: 'POST',
+   226→        headers: { 'Content-Type': 'application/json' },
+   227→        body: JSON.stringify({ action: 'register', name: fullName, email, phone, password }),
+   228→      });
+   229→      if (res.ok) {
+   230→        const data = await res.json();
+   231→        login(data.user);
+   232→        toast.success('Registration successful! Welcome to NextShop.');
+   233→        navigate('home');
+   234→      } else {
+   235→        const err = await res.json();
+   236→        toast.error(err.error || 'Registration failed. Please try again.');
+   237→      }
+   238→    } catch {
+   239→      toast.error('Registration failed. Please try again.');
+   240→    } finally {
+   241→      setLoading(false);
+   242→    }
+   243→  };
+   244→
+   245→  return (
+   246→    <div className="min-h-[70vh] flex items-center justify-center px-4 py-8">
+   247→      <div className="w-full max-w-md border border-border p-8">
+   248→        <div className="text-center pb-2 mb-6">
+   249→          <h1 className="text-2xl font-semibold tracking-tight">Create Account</h1>
+   250→          <p className="text-sm text-muted-foreground mt-1">Join NextShop and start shopping</p>
+   251→        </div>
+   252→        <form onSubmit={handleRegister} className="space-y-4">
+   253→          {/* Full Name */}
+   254→          <div className="space-y-1.5">
+   255→            <label htmlFor="reg-name" className="text-sm font-medium">Full Name</label>
+   256→            <div className="relative">
+   257→              <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   258→              <input
+   259→                id="reg-name"
+   260→                placeholder="John Doe"
+   261→                value={fullName}
+   262→                onChange={(e) => { setFullName(e.target.value); setErrors({ ...errors, fullName: undefined }); }}
+   263→                className={`w-full h-10 rounded-md border bg-transparent px-3 pl-9 text-sm outline-none transition-colors focus:ring-1 focus:ring-foreground/10 ${errors.fullName ? 'border-red-500' : 'border-border'}`}
+   264→              />
+   265→            </div>
+   266→            {errors.fullName && <p className="text-xs text-red-500">{errors.fullName}</p>}
+   267→          </div>
+   268→
+   269→          {/* Email */}
+   270→          <div className="space-y-1.5">
+   271→            <label htmlFor="reg-email" className="text-sm font-medium">Email</label>
+   272→            <div className="relative">
+   273→              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   274→              <input
+   275→                id="reg-email"
+   276→                type="email"
+   277→                placeholder="you@example.com"
+   278→                value={email}
+   279→                onChange={(e) => { setEmail(e.target.value); setErrors({ ...errors, email: undefined }); }}
+   280→                className={`w-full h-10 rounded-md border bg-transparent px-3 pl-9 text-sm outline-none transition-colors focus:ring-1 focus:ring-foreground/10 ${errors.email ? 'border-red-500' : 'border-border'}`}
+   281→              />
+   282→            </div>
+   283→            {errors.email && <p className="text-xs text-red-500">{errors.email}</p>}
+   284→          </div>
+   285→
+   286→          {/* Phone */}
+   287→          <div className="space-y-1.5">
+   288→            <label htmlFor="reg-phone" className="text-sm font-medium">Phone Number</label>
+   289→            <div className="relative">
+   290→              <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   291→              <input
+   292→                id="reg-phone"
+   293→                placeholder="01XXXXXXXXX"
+   294→                value={phone}
+   295→                onChange={(e) => { setPhone(e.target.value); setErrors({ ...errors, phone: undefined }); }}
+   296→                className={`w-full h-10 rounded-md border bg-transparent px-3 pl-9 text-sm outline-none transition-colors focus:ring-1 focus:ring-foreground/10 ${errors.phone ? 'border-red-500' : 'border-border'}`}
+   297→              />
+   298→            </div>
+   299→            {errors.phone && <p className="text-xs text-red-500">{errors.phone}</p>}
+   300→          </div>
+   301→
+   302→          {/* Password */}
+   303→          <div className="space-y-1.5">
+   304→            <label htmlFor="reg-password" className="text-sm font-medium">Password</label>
+   305→            <div className="relative">
+   306→              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   307→              <input
+   308→                id="reg-password"
+   309→                type={showPassword ? 'text' : 'password'}
+   310→                placeholder="Create a password"
+   311→                value={password}
+   312→                onChange={(e) => { setPassword(e.target.value); setErrors({ ...errors, password: undefined }); }}
+   313→                className={`w-full h-10 rounded-md border bg-transparent px-3 pl-9 pr-9 text-sm outline-none transition-colors focus:ring-1 focus:ring-foreground/10 ${errors.password ? 'border-red-500' : 'border-border'}`}
+   314→              />
+   315→              <button
+   316→                type="button"
+   317→                onClick={() => setShowPassword(!showPassword)}
+   318→                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+   319→                aria-label={showPassword ? 'Hide password' : 'Show password'}
+   320→              >
+   321→                {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+   322→              </button>
+   323→            </div>
+   324→            {errors.password && <p className="text-xs text-red-500">{errors.password}</p>}
+   325→          </div>
+   326→
+   327→          {/* Confirm Password */}
+   328→          <div className="space-y-1.5">
+   329→            <label htmlFor="reg-confirm-password" className="text-sm font-medium">Confirm Password</label>
+   330→            <div className="relative">
+   331→              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   332→              <input
+   333→                id="reg-confirm-password"
+   334→                type={showConfirmPassword ? 'text' : 'password'}
+   335→                placeholder="Confirm your password"
+   336→                value={confirmPassword}
+   337→                onChange={(e) => { setConfirmPassword(e.target.value); setErrors({ ...errors, confirmPassword: undefined }); }}
+   338→                className={`w-full h-10 rounded-md border bg-transparent px-3 pl-9 pr-9 text-sm outline-none transition-colors focus:ring-1 focus:ring-foreground/10 ${errors.confirmPassword ? 'border-red-500' : 'border-border'}`}
+   339→              />
+   340→              <button
+   341→                type="button"
+   342→                onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+   343→                className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+   344→                aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+   345→              >
+   346→                {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+   347→              </button>
+   348→            </div>
+   349→            {errors.confirmPassword && <p className="text-xs text-red-500">{errors.confirmPassword}</p>}
+   350→          </div>
+   351→
+   352→          {/* Terms */}
+   353→          <div className="flex items-start gap-2">
+   354→            <input
+   355→              type="checkbox"
+   356→              checked={agreeTerms}
+   357→              onChange={(e) => { setAgreeTerms(e.target.checked); setErrors({ ...errors, terms: undefined }); }}
+   358→              className="rounded border-border h-4 w-4 mt-0.5"
+   359→            />
+   360→            <label className="text-sm text-muted-foreground leading-relaxed cursor-pointer">
+   361→              I agree to the{' '}
+   362→              <span className="text-foreground font-medium">Terms of Service</span> and{' '}
+   363→              <span className="text-foreground font-medium">Privacy Policy</span>
+   364→            </label>
+   365→          </div>
+   366→          {errors.terms && <p className="text-xs text-red-500">{errors.terms}</p>}
+   367→
+   368→          {/* Register Button */}
+   369→          <button
+   370→            type="submit"
+   371→            disabled={loading}
+   372→            className="w-full bg-foreground text-background hover:bg-foreground/90 h-11 rounded-md text-sm font-medium transition-colors disabled:opacity-50"
+   373→          >
+   374→            {loading ? (
+   375→              <span className="inline-flex items-center gap-2">
+   376→                <span className="h-4 w-4 animate-spin rounded-full border-2 border-background border-t-transparent" />
+   377→                Creating Account...
+   378→              </span>
+   379→            ) : (
+   380→              'Create Account'
+   381→            )}
+   382→          </button>
+   383→        </form>
+   384→
+   385→        {/* Social Register */}
+   386→        <div className="mt-6">
+   387→          <div className="relative">
+   388→            <div className="border-t border-border" />
+   389→            <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-background px-2 text-xs text-muted-foreground">
+   390→              or sign up with
+   391→            </span>
+   392→          </div>
+   393→          <div className="grid grid-cols-2 gap-3 mt-4">
+   394→            <button type="button" className="w-full h-10 bg-muted hover:bg-muted/80 text-foreground rounded-md text-sm font-medium transition-colors inline-flex items-center justify-center gap-2">
+   395→              <svg className="h-4 w-4" viewBox="0 0 24 24">
+   396→                <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
+   397→                <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+   398→                <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+   399→                <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+   400→              </svg>
+   401→              Google
+   402→            </button>
+   403→            <button type="button" className="w-full h-10 bg-muted hover:bg-muted/80 text-foreground rounded-md text-sm font-medium transition-colors inline-flex items-center justify-center gap-2">
+   404→              <svg className="h-4 w-4" viewBox="0 0 24 24" fill="#1877F2">
+   405→                <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+   406→              </svg>
+   407→              Facebook
+   408→            </button>
+   409→          </div>
+   410→        </div>
+   411→
+   412→        <div className="justify-center pb-2 pt-6">
+   413→          <p className="text-sm text-muted-foreground text-center">
+   414→            Already have an account?{' '}
+   415→            <button
+   416→              onClick={() => navigate('login')}
+   417→              className="text-foreground hover:underline font-medium transition-colors"
+   418→            >
+   419→              Login
+   420→            </button>
+   421→          </p>
+   422→        </div>
+   423→      </div>
+   424→    </div>
+   425→  );
+   426→}
+   427→
+   428→// ============================
+   429→// ForgotPasswordPage
+   430→// ============================
+   431→export function ForgotPasswordPage() {
+   432→  const { navigate } = useUIStore();
+   433→  const [email, setEmail] = useState('');
+   434→  const [loading, setLoading] = useState(false);
+   435→  const [sent, setSent] = useState(false);
+   436→  const [error, setError] = useState('');
+   437→
+   438→  const handleSubmit = async (e: React.FormEvent) => {
+   439→    e.preventDefault();
+   440→    if (!email.trim()) {
+   441→      setError('Email is required');
+   442→      return;
+   443→    }
+   444→    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+   445→      setError('Enter a valid email address');
+   446→      return;
+   447→    }
+   448→    setError('');
+   449→    setLoading(true);
+   450→    try {
+   451→      const res = await fetch('/api/auth', {
+   452→        method: 'POST',
+   453→        headers: { 'Content-Type': 'application/json' },
+   454→        body: JSON.stringify({ action: 'forgot-password', email }),
+   455→      });
+   456→      if (res.ok) {
+   457→        setSent(true);
+   458→        toast.success('Reset link sent! Check your email.');
+   459→      } else {
+   460→        const err = await res.json();
+   461→        toast.error(err.error || 'Failed to send reset link');
+   462→      }
+   463→    } catch {
+   464→      toast.error('Something went wrong. Please try again.');
+   465→    } finally {
+   466→      setLoading(false);
+   467→    }
+   468→  };
+   469→
+   470→  return (
+   471→    <div className="min-h-[70vh] flex items-center justify-center px-4 py-8">
+   472→      <div className="w-full max-w-md border border-border p-8">
+   473→        <div className="text-center pb-2 mb-6">
+   474→          <h1 className="text-2xl font-semibold tracking-tight">Forgot Password</h1>
+   475→          <p className="text-sm text-muted-foreground mt-1">Enter your email to receive a reset link</p>
+   476→        </div>
+   477→        {sent ? (
+   478→          <div className="text-center space-y-4 py-4">
+   479→            <div className="w-16 h-16 rounded-full bg-muted flex items-center justify-center mx-auto">
+   480→              <CheckCircle2 className="h-8 w-8 text-foreground" />
+   481→            </div>
+   482→            <div>
+   483→              <h3 className="text-lg font-semibold text-foreground">Check Your Email</h3>
+   484→              <p className="text-sm text-muted-foreground mt-1">
+   485→                We&apos;ve sent a password reset link to <span className="font-medium text-foreground">{email}</span>.
+   486→                Please check your inbox and follow the instructions.
+   487→              </p>
+   488→            </div>
+   489→            <button
+   490→              onClick={() => navigate('login')}
+   491→              className="mt-2 border border-border hover:bg-accent h-10 px-4 rounded-md text-sm font-medium transition-colors inline-flex items-center gap-2"
+   492→            >
+   493→              <ArrowLeft className="h-4 w-4" />
+   494→              Back to Login
+   495→            </button>
+   496→          </div>
+   497→        ) : (
+   498→          <form onSubmit={handleSubmit} className="space-y-4">
+   499→            <div className="text-center mb-2">
+   500→              <p className="text-sm text-muted-foreground">
+   501→                Enter the email address associated with your account and we&apos;ll send you a link to reset your password.
+   502→              </p>
+   503→            </div>
+   504→
+   505→            <div className="space-y-1.5">
+   506→              <label htmlFor="forgot-email" className="text-sm font-medium">Email Address</label>
+   507→              <div className="relative">
+   508→                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   509→                <input
+   510→                  id="forgot-email"
+   511→                  type="email"
+   512→                  placeholder="you@example.com"
+   513→                  value={email}
+   514→                  onChange={(e) => { setEmail(e.target.value); setError(''); }}
+   515→                  className={`w-full h-10 rounded-md border bg-transparent px-3 pl-9 text-sm outline-none transition-colors focus:ring-1 focus:ring-foreground/10 ${error ? 'border-red-500' : 'border-border'}`}
+   516→                />
+   517→              </div>
+   518→              {error && <p className="text-xs text-red-500">{error}</p>}
+   519→            </div>
+   520→
+   521→            <button
+   522→              type="submit"
+   523→              disabled={loading}
+   524→              className="w-full bg-foreground text-background hover:bg-foreground/90 h-11 rounded-md text-sm font-medium transition-colors disabled:opacity-50"
+   525→            >
+   526→              {loading ? (
+   527→                <span className="inline-flex items-center gap-2">
+   528→                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-background border-t-transparent" />
+   529→                  Sending...
+   530→                </span>
+   531→              ) : (
+   532→                'Send Reset Link'
+   533→              )}
+   534→            </button>
+   535→
+   536→            <div className="text-center pt-2">
+   537→              <button
+   538→                type="button"
+   539→                onClick={() => navigate('login')}
+   540→                className="text-sm text-muted-foreground hover:text-foreground font-medium transition-colors inline-flex items-center gap-1"
+   541→              >
+   542→                <ArrowLeft className="h-3.5 w-3.5" />
+   543→                Back to Login
+   544→              </button>
+   545→            </div>
+   546→          </form>
+   547→        )}
+   548→      </div>
+   549→    </div>
+   550→  );
+   551→}

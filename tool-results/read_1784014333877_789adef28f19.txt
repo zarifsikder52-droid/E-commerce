@@ -1,0 +1,1742 @@
+     1→'use client';
+     2→import { useEffect, useState, useMemo, useCallback } from 'react';
+     3→import { useUIStore } from '@/store/use-ui';
+     4→import { useAuthStore } from '@/store/use-auth';
+     5→import { useAdminAuth } from '@/store/use-admin-auth';
+     6→import { Button } from '@/components/ui/button';
+     7→import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+     8→import { Input } from '@/components/ui/input';
+     9→import { Label } from '@/components/ui/label';
+    10→import { Badge } from '@/components/ui/badge';
+    11→import { Separator } from '@/components/ui/separator';
+    12→import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+    13→import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+    14→import { Progress } from '@/components/ui/progress';
+    15→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+    16→import { ScrollArea } from '@/components/ui/scroll-area';
+    17→import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+    18→import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from '@/components/ui/dialog';
+    19→import { Checkbox } from '@/components/ui/checkbox';
+    20→import { Textarea } from '@/components/ui/textarea';
+    21→import {
+    22→  BarChart, Bar, PieChart, Pie, Cell, AreaChart, Area,
+    23→  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
+    24→} from 'recharts';
+    25→import {
+    26→  DollarSign, ShoppingCart, Users, Package, TrendingUp, TrendingDown,
+    27→  Eye, ArrowUpRight, MoreHorizontal, Search, Filter,
+    28→  Download, RefreshCw, BarChart3, PieChart as PieChartIcon,
+    29→  Tag, MessageSquare, ImageIcon, Settings, Menu, Loader2,
+    30→  AlertTriangle, ChevronRight, Star, Plus, Pencil, Trash2, ChevronDown, Save, Check, X
+    31→} from 'lucide-react';
+    32→import type { Order, Product, User as AppUser, Coupon, Review, Category, Brand } from '@/types';
+    33→
+    34→// ─── Constants ───
+    35→const CHART_COLORS = ['#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#8b5cf6'];
+    36→
+    37→const orderStatusConfig: Record<string, { label: string; color: string }> = {
+    38→  pending: { label: 'Pending', color: 'bg-yellow-100 text-yellow-800 border-yellow-300' },
+    39→  confirmed: { label: 'Confirmed', color: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
+    40→  processing: { label: 'Processing', color: 'bg-orange-100 text-orange-800 border-orange-300' },
+    41→  shipped: { label: 'Shipped', color: 'bg-cyan-100 text-cyan-800 border-cyan-300' },
+    42→  delivered: { label: 'Delivered', color: 'bg-green-100 text-green-800 border-green-300' },
+    43→  cancelled: { label: 'Cancelled', color: 'bg-red-100 text-red-800 border-red-300' },
+    44→};
+    45→
+    46→const roleConfig: Record<string, { label: string; color: string }> = {
+    47→  admin: { label: 'Admin', color: 'bg-red-100 text-red-800 border-red-300' },
+    48→  seller: { label: 'Seller', color: 'bg-orange-100 text-orange-800 border-orange-300' },
+    49→  customer: { label: 'Customer', color: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
+    50→};
+    51→
+    52→type AdminTab = 'overview' | 'orders' | 'products' | 'users' | 'coupons' | 'reviews' | 'settings';
+    53→
+    54→const sidebarItems: { id: AdminTab; label: string; icon: React.ReactNode }[] = [
+    55→  { id: 'overview', label: 'Overview', icon: <BarChart3 className="h-4 w-4" /> },
+    56→  { id: 'orders', label: 'Orders', icon: <ShoppingCart className="h-4 w-4" /> },
+    57→  { id: 'products', label: 'Products', icon: <Package className="h-4 w-4" /> },
+    58→  { id: 'users', label: 'Users', icon: <Users className="h-4 w-4" /> },
+    59→  { id: 'coupons', label: 'Coupons', icon: <Tag className="h-4 w-4" /> },
+    60→  { id: 'reviews', label: 'Reviews', icon: <MessageSquare className="h-4 w-4" /> },
+    61→  { id: 'settings', label: 'Settings', icon: <Settings className="h-4 w-4" /> },
+    62→];
+    63→
+    64→// ─── Custom scrollbar ───
+    65→const scrollbarStyles = `
+    66→  .admin-scroll::-webkit-scrollbar { width: 6px; }
+    67→  .admin-scroll::-webkit-scrollbar-track { background: transparent; }
+    68→  .admin-scroll::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+    69→  .admin-scroll::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+    70→`;
+    71→
+    72→// ─── Format helpers ───
+    73→const formatCurrency = (amount: number) => `৳${amount.toLocaleString()}`;
+    74→const formatDate = (dateStr: string) => new Date(dateStr).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    75→
+    76→const generateSlug = (name: string): string =>
+    77→  name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    78→
+    79→// ─── Product form type ───
+    80→interface ProductFormData {
+    81→  name: string;
+    82→  slug: string;
+    83→  categoryId: string;
+    84→  brandId: string;
+    85→  price: string;
+    86→  discountPrice: string;
+    87→  stock: string;
+    88→  shortDesc: string;
+    89→  description: string;
+    90→  status: string;
+    91→  isFeatured: boolean;
+    92→  isTrending: boolean;
+    93→  isBestSeller: boolean;
+    94→  isNewArrival: boolean;
+    95→}
+    96→
+    97→const emptyProductForm: ProductFormData = {
+    98→  name: '', slug: '', categoryId: '', brandId: '',
+    99→  price: '', discountPrice: '', stock: '0', shortDesc: '',
+   100→  description: '', status: 'active',
+   101→  isFeatured: false, isTrending: false, isBestSeller: false, isNewArrival: false,
+   102→};
+   103→
+   104→// ─── Admin user type (with order count) ───
+   105→interface AdminUser extends AppUser {
+   106→  _count?: { orders: number };
+   107→  createdAt?: string;
+   108→}
+   109→
+   110→export default function AdminDashboard() {
+   111→  const { user: spaUser, isAuthenticated: spaAuthenticated } = useAuthStore();
+   112→  const { admin, isAuthenticated: adminAuthenticated } = useAdminAuth();
+   113→  const { navigate, analyticsData, setAnalyticsData, dashboardStats, setDashboardStats } = useUIStore();
+   114→
+   115→  // Use admin auth if available, fall back to SPA auth
+   116→  const isAuthenticated = adminAuthenticated || spaAuthenticated;
+   117→  const user = admin || spaUser;
+   118→
+   119→  const [activeTab, setActiveTab] = useState<AdminTab>('overview');
+   120→  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+   121→  const [loading, setLoading] = useState(true);
+   122→
+   123→  // Data
+   124→  const [allOrders, setAllOrders] = useState<Order[]>([]);
+   125→  const [products, setProducts] = useState<Product[]>([]);
+   126→  const [users, setUsers] = useState<AdminUser[]>([]);
+   127→  const [coupons, setCoupons] = useState<Coupon[]>([]);
+   128→  const [reviews, setReviews] = useState<Review[]>([]);
+   129→
+   130→  // Admin data
+   131→  const [categories, setCategories] = useState<Category[]>([]);
+   132→  const [brands, setBrands] = useState<Brand[]>([]);
+   133→  const [siteSettings, setSiteSettings] = useState<Record<string, string>>({});
+   134→
+   135→  // Filters
+   136→  const [orderSearch, setOrderSearch] = useState('');
+   137→  const [orderStatusFilter, setOrderStatusFilter] = useState('all');
+   138→  const [productSearch, setProductSearch] = useState('');
+   139→  const [productStatusFilter, setProductStatusFilter] = useState('all');
+   140→  const [userSearch, setUserSearch] = useState('');
+   141→  const [orderPage, setOrderPage] = useState(1);
+   142→  const [productPage, setProductPage] = useState(1);
+   143→  const [userPage, setUserPage] = useState(1);
+   144→  const ordersPerPage = 10;
+   145→  const productPerPage = 10;
+   146→  const usersPerPage = 10;
+   147→
+   148→  // Product dialog
+   149→  const [productDialogOpen, setProductDialogOpen] = useState(false);
+   150→  const [editingProductId, setEditingProductId] = useState<string | null>(null);
+   151→  const [productForm, setProductForm] = useState<ProductFormData>(emptyProductForm);
+   152→  const [productSaving, setProductSaving] = useState(false);
+   153→
+   154→  // Expanded orders
+   155→  const [expandedOrderId, setExpandedOrderId] = useState<string | null>(null);
+   156→
+   157→  // Settings saving
+   158→  const [settingsSaving, setSettingsSaving] = useState(false);
+   159→  const [settingsForm, setSettingsForm] = useState<Record<string, string>>({});
+   160→
+   161→  // ─── Fetch functions ───
+   162→  const fetchProducts = useCallback(async (page = 1, search = '', status = 'all') => {
+   163→    try {
+   164→      const params = new URLSearchParams({ page: String(page), limit: String(productPerPage) });
+   165→      if (search) params.set('search', search);
+   166→      if (status && status !== 'all') params.set('status', status);
+   167→      const res = await fetch(`/api/admin/products?${params}`);
+   168→      const data = await res.json();
+   169→      if (data.products) setProducts(data.products);
+   170→    } catch { /* silent */ }
+   171→  }, []);
+   172→
+   173→  const fetchUsers = useCallback(async (page = 1, search = '') => {
+   174→    try {
+   175→      const params = new URLSearchParams({ page: String(page), limit: String(usersPerPage) });
+   176→      if (search) params.set('search', search);
+   177→      const res = await fetch(`/api/admin/users?${params}`);
+   178→      const data = await res.json();
+   179→      if (data.users) setUsers(data.users);
+   180→    } catch { /* silent */ }
+   181→  }, []);
+   182→
+   183→  const fetchCategories = useCallback(async () => {
+   184→    try {
+   185→      const res = await fetch('/api/admin/categories');
+   186→      const data = await res.json();
+   187→      if (data.categories) {
+   188→        const flat: Category[] = [];
+   189→        for (const c of data.categories) {
+   190→          flat.push(c);
+   191→          if (c.children) flat.push(...c.children);
+   192→        }
+   193→        setCategories(flat);
+   194→      }
+   195→    } catch { /* silent */ }
+   196→  }, []);
+   197→
+   198→  const fetchBrands = useCallback(async () => {
+   199→    try {
+   200→      const res = await fetch('/api/brands');
+   201→      const data = await res.json();
+   202→      if (data.brands) setBrands(data.brands);
+   203→    } catch { /* silent */ }
+   204→  }, []);
+   205→
+   206→  const fetchSettings = useCallback(async () => {
+   207→    try {
+   208→      const res = await fetch('/api/admin/settings');
+   209→      const data = await res.json();
+   210→      if (data.settings) {
+   211→        setSiteSettings(data.settings);
+   212→        setSettingsForm(data.settings);
+   213→      }
+   214→    } catch { /* silent */ }
+   215→  }, []);
+   216→
+   217→  // ─── Initial data load ───
+   218→  useEffect(() => {
+   219→    if (!isAuthenticated || !user) return;
+   220→
+   221→    const fetchData = async () => {
+   222→      setLoading(true);
+   223→      try {
+   224→        const [statsRes, analyticsRes, topProductsRes, ordersRes, couponsRes, categoriesRes, brandsRes, settingsRes] = await Promise.allSettled([
+   225→          fetch('/api/admin?endpoint=stats').then(r => r.json()),
+   226→          fetch('/api/admin?endpoint=analytics').then(r => r.json()),
+   227→          fetch('/api/products?limit=5&sort=soldCount').then(r => r.json()),
+   228→          fetch('/api/orders?limit=50').then(r => r.json()),
+   229→          fetch('/api/coupons').then(r => r.json()),
+   230→          fetch('/api/admin/categories').then(r => r.json()),
+   231→          fetch('/api/brands').then(r => r.json()),
+   232→          fetch('/api/admin/settings').then(r => r.json()),
+   233→        ]);
+   234→
+   235→        if (statsRes.status === 'fulfilled' && statsRes.value?.stats) {
+   236→          setDashboardStats(statsRes.value.stats);
+   237→        }
+   238→        if (analyticsRes.status === 'fulfilled' && analyticsRes.value?.data) {
+   239→          setAnalyticsData(analyticsRes.value.data);
+   240→        }
+   241→        if (topProductsRes.status === 'fulfilled' && topProductsRes.value?.products) {
+   242→          setProducts(topProductsRes.value.products);
+   243→        }
+   244→        if (ordersRes.status === 'fulfilled' && ordersRes.value?.orders) {
+   245→          setAllOrders(ordersRes.value.orders);
+   246→        }
+   247→        if (couponsRes.status === 'fulfilled' && couponsRes.value?.coupons) {
+   248→          setCoupons(couponsRes.value.coupons);
+   249→        }
+   250→        if (categoriesRes.status === 'fulfilled' && categoriesRes.value?.categories) {
+   251→          const flat: Category[] = [];
+   252→          for (const c of categoriesRes.value.categories) {
+   253→            flat.push(c);
+   254→            if (c.children) flat.push(...c.children);
+   255→          }
+   256→          setCategories(flat);
+   257→        }
+   258→        if (brandsRes.status === 'fulfilled' && brandsRes.value?.brands) {
+   259→          setBrands(brandsRes.value.brands);
+   260→        }
+   261→        if (settingsRes.status === 'fulfilled' && settingsRes.value?.settings) {
+   262→          setSiteSettings(settingsRes.value.settings);
+   263→          setSettingsForm(settingsRes.value.settings);
+   264→        }
+   265→      } catch {
+   266→        // mock data fallback
+   267→      } finally {
+   268→        setLoading(false);
+   269→      }
+   270→    };
+   271→    fetchData();
+   272→  }, [isAuthenticated, user, setAnalyticsData, setDashboardStats]);
+   273→
+   274→  // Fetch products, users when their tabs become active
+   275→  useEffect(() => {
+   276→    if (activeTab === 'products' && !loading) fetchProducts(1, productSearch, productStatusFilter);
+   277→  }, [activeTab, loading, fetchProducts, productSearch, productStatusFilter]);
+   278→
+   279→  useEffect(() => {
+   280→    if (activeTab === 'users' && !loading) fetchUsers(1, userSearch);
+   281→  }, [activeTab, loading, fetchUsers, userSearch]);
+   282→
+   283→  useEffect(() => {
+   284→    if (activeTab === 'settings' && !loading) fetchSettings();
+   285→  }, [activeTab, loading, fetchSettings]);
+   286→
+   287→  // ─── Handlers ───
+   288→  const handleOrderStatusChange = async (orderId: string, newStatus: string) => {
+   289→    // Optimistic update
+   290→    setAllOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: newStatus } : o));
+   291→    try {
+   292→      await fetch(`/api/admin/orders/${orderId}`, {
+   293→        method: 'PUT',
+   294→        headers: { 'Content-Type': 'application/json' },
+   295→        body: JSON.stringify({ status: newStatus }),
+   296→      });
+   297→    } catch {
+   298→      // Revert on error
+   299→      setAllOrders(prev => prev.map(o => o.id === orderId ? { ...o, status: orderStatusFilter } : o));
+   300→    }
+   301→  };
+   302→
+   303→  const handleOpenProductDialog = (product?: Product) => {
+   304→    if (product) {
+   305→      setEditingProductId(product.id);
+   306→      setProductForm({
+   307→        name: product.name,
+   308→        slug: product.slug,
+   309→        categoryId: product.categoryId,
+   310→        brandId: product.brandId || '',
+   311→        price: String(product.price),
+   312→        discountPrice: product.discountPrice ? String(product.discountPrice) : '',
+   313→        stock: String(product.stock),
+   314→        shortDesc: product.shortDesc || '',
+   315→        description: product.description || '',
+   316→        status: product.status,
+   317→        isFeatured: product.isFeatured,
+   318→        isTrending: product.isTrending,
+   319→        isBestSeller: product.isBestSeller,
+   320→        isNewArrival: product.isNewArrival,
+   321→      });
+   322→    } else {
+   323→      setEditingProductId(null);
+   324→      setProductForm(emptyProductForm);
+   325→    }
+   326→    setProductDialogOpen(true);
+   327→  };
+   328→
+   329→  const handleSaveProduct = async () => {
+   330→    if (!productForm.name || !productForm.slug || !productForm.categoryId || !productForm.price) return;
+   331→    setProductSaving(true);
+   332→    try {
+   333→      const url = editingProductId
+   334→        ? `/api/admin/products/${editingProductId}`
+   335→        : '/api/admin/products';
+   336→      const method = editingProductId ? 'PUT' : 'POST';
+   337→      const res = await fetch(url, {
+   338→        method,
+   339→        headers: { 'Content-Type': 'application/json' },
+   340→        body: JSON.stringify(productForm),
+   341→      });
+   342→      const data = await res.json();
+   343→      if (res.ok) {
+   344→        setProductDialogOpen(false);
+   345→        fetchProducts(productPage, productSearch, productStatusFilter);
+   346→      }
+   347→    } catch { /* silent */ }
+   348→    setProductSaving(false);
+   349→  };
+   350→
+   351→  const handleDeleteProduct = async (productId: string) => {
+   352→    if (!confirm('Archive this product? (Sets status to draft)')) return;
+   353→    try {
+   354→      await fetch(`/api/admin/products/${productId}`, { method: 'DELETE' });
+   355→      fetchProducts(productPage, productSearch, productStatusFilter);
+   356→    } catch { /* silent */ }
+   357→  };
+   358→
+   359→  const handleUserStatusToggle = async (userId: string, currentActive: boolean) => {
+   360→    const newActive = !currentActive;
+   361→    // Optimistic
+   362→    setUsers(prev => prev.map(u => u.id === userId ? { ...u, isActive: newActive } : u));
+   363→    try {
+   364→      await fetch('/api/admin/users', {
+   365→        method: 'PUT',
+   366→        headers: { 'Content-Type': 'application/json' },
+   367→        body: JSON.stringify({ userId, isActive: newActive }),
+   368→      });
+   369→    } catch {
+   370→      setUsers(prev => prev.map(u => u.id === userId ? { ...u, isActive: currentActive } : u));
+   371→    }
+   372→  };
+   373→
+   374→  const handleUserRoleChange = async (userId: string, newRole: string) => {
+   375→    // Optimistic
+   376→    setUsers(prev => prev.map(u => u.id === userId ? { ...u, role: newRole } : u));
+   377→    try {
+   378→      await fetch('/api/admin/users', {
+   379→        method: 'PUT',
+   380→        headers: { 'Content-Type': 'application/json' },
+   381→        body: JSON.stringify({ userId, role: newRole }),
+   382→      });
+   383→    } catch { /* silent */ }
+   384→  };
+   385→
+   386→  const handleSaveSettings = async () => {
+   387→    setSettingsSaving(true);
+   388→    try {
+   389→      await fetch('/api/admin/settings', {
+   390→        method: 'PUT',
+   391→        headers: { 'Content-Type': 'application/json' },
+   392→        body: JSON.stringify(settingsForm),
+   393→      });
+   394→      setSiteSettings(settingsForm);
+   395→    } catch { /* silent */ }
+   396→    setSettingsSaving(false);
+   397→  };
+   398→
+   399→  // ─── Computed data (before early return to satisfy hooks rules) ───
+   400→  const filteredOrders = useMemo(() => {
+   401→    let result = allOrders;
+   402→    if (orderStatusFilter !== 'all') {
+   403→      result = result.filter(o => o.status === orderStatusFilter);
+   404→    }
+   405→    if (orderSearch) {
+   406→      const q = orderSearch.toLowerCase();
+   407→      result = result.filter(o =>
+   408→        o.orderNumber.toLowerCase().includes(q) ||
+   409→        o.items.some(i => i.productName.toLowerCase().includes(q))
+   410→      );
+   411→    }
+   412→    return result;
+   413→  }, [allOrders, orderStatusFilter, orderSearch]);
+   414→
+   415→  const paginatedOrders = useMemo(() => {
+   416→    const start = (orderPage - 1) * ordersPerPage;
+   417→    return filteredOrders.slice(start, start + ordersPerPage);
+   418→  }, [filteredOrders, orderPage]);
+   419→
+   420→  const totalOrderPages = Math.ceil(filteredOrders.length / ordersPerPage);
+   421→
+   422→  const filteredProducts = useMemo(() => {
+   423→    if (!productSearch && productStatusFilter === 'all') return products;
+   424→    return products.filter(p => {
+   425→      const matchSearch = !productSearch || p.name.toLowerCase().includes(productSearch.toLowerCase());
+   426→      const matchStatus = productStatusFilter === 'all' || p.status === productStatusFilter;
+   427→      return matchSearch && matchStatus;
+   428→    });
+   429→  }, [products, productSearch, productStatusFilter]);
+   430→
+   431→  const paginatedProducts = useMemo(() => {
+   432→    const start = (productPage - 1) * productPerPage;
+   433→    return filteredProducts.slice(start, start + productPerPage);
+   434→  }, [filteredProducts, productPage]);
+   435→
+   436→  const totalProductPages = Math.ceil(filteredProducts.length / productPerPage);
+   437→
+   438→  const filteredUsers = useMemo(() => {
+   439→    if (!userSearch) return users;
+   440→    const q = userSearch.toLowerCase();
+   441→    return users.filter(u => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q));
+   442→  }, [users, userSearch]);
+   443→
+   444→  const paginatedUsers = useMemo(() => {
+   445→    const start = (userPage - 1) * usersPerPage;
+   446→    return filteredUsers.slice(start, start + usersPerPage);
+   447→  }, [filteredUsers, userPage]);
+   448→
+   449→  const totalUserPages = Math.ceil(filteredUsers.length / usersPerPage);
+   450→
+   451→  const recentOrders = allOrders.slice(0, 5);
+   452→
+   453→  // Pie data for order status distribution
+   454→  const orderStatusPieData = useMemo(() => {
+   455→    const counts: Record<string, number> = {};
+   456→    allOrders.forEach(o => { counts[o.status] = (counts[o.status] || 0) + 1; });
+   457→    return Object.entries(counts).map(([name, value]) => ({
+   458→      name: orderStatusConfig[name]?.label ?? name,
+   459→      value,
+   460→    }));
+   461→  }, [allOrders]);
+   462→
+   463→  // ─── Not authenticated ───
+   464→  if (!isAuthenticated || !user || user.role !== 'admin') {
+   465→    if (adminAuthenticated || typeof window !== 'undefined' && window.location.pathname === '/admin') {
+   466→      return null;
+   467→    }
+   468→    return (
+   469→      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-6 p-4">
+   470→        <div className="h-24 w-24 rounded-full bg-muted flex items-center justify-center">
+   471→          <AlertTriangle className="h-12 w-12 text-muted-foreground" />
+   472→        </div>
+   473→        <h2 className="text-2xl font-bold">Admin Access Required</h2>
+   474→        <p className="text-muted-foreground text-center max-w-md">
+   475→          You need to be signed in as an administrator to access the admin dashboard.
+   476→        </p>
+   477→        <Button size="lg" onClick={() => navigate('login')} className="gap-2">
+   478→          Sign In
+   479→        </Button>
+   480→      </div>
+   481→    );
+   482→  }
+   483→
+   484→  // ─── Stat card component ───
+   485→  const StatCard = ({ title, value, growth, icon, prefix = '' }: {
+   486→    title: string; value: string; growth: number; icon: React.ReactNode; prefix?: string;
+   487→  }) => (
+   488→    <Card className="hover:shadow-md transition-shadow">
+   489→      <CardContent className="p-4 md:p-6">
+   490→        <div className="flex items-center justify-between">
+   491→          <div className="space-y-1">
+   492→            <p className="text-sm text-muted-foreground font-medium">{title}</p>
+   493→            <p className="text-2xl md:text-3xl font-bold tracking-tight">
+   494→              {prefix}{value}
+   495→            </p>
+   496→          </div>
+   497→          <div className="h-10 w-10 md:h-12 md:w-12 rounded-lg bg-emerald-100 dark:bg-emerald-950 flex items-center justify-center text-emerald-600">
+   498→            {icon}
+   499→          </div>
+   500→        </div>
+   501→        <div className="flex items-center gap-1 mt-2">
+   502→          {growth >= 0 ? (
+   503→            <TrendingUp className="h-3.5 w-3.5 text-emerald-600" />
+   504→          ) : (
+   505→            <TrendingDown className="h-3.5 w-3.5 text-red-500" />
+   506→          )}
+   507→          <span className={`text-xs font-medium ${growth >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+   508→            {Math.abs(growth)}%
+   509→          </span>
+   510→          <span className="text-xs text-muted-foreground">vs last month</span>
+   511→        </div>
+   512→      </CardContent>
+   513→    </Card>
+   514→  );
+   515→
+   516→  // ─── Sidebar content ───
+   517→  const SidebarNav = ({ onNavigate }: { onNavigate?: () => void }) => (
+   518→    <nav className="flex flex-col gap-1 p-2">
+   519→      {sidebarItems.map((item) => (
+   520→        <button
+   521→          key={item.id}
+   522→          onClick={() => { setActiveTab(item.id); onNavigate?.(); }}
+   523→          className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors text-left w-full ${
+   524→            activeTab === item.id
+   525→              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+   526→              : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+   527→          }`}
+   528→        >
+   529→          {item.icon}
+   530→          {item.label}
+   531→        </button>
+   532→      ))}
+   533→      <Separator className="my-2" />
+   534→      <button
+   535→        onClick={() => { window.location.href = '/'; onNavigate?.(); }}
+   536→        className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors text-left w-full"
+   537→      >
+   538→        <ArrowUpRight className="h-4 w-4" />
+   539→        View Store
+   540→      </button>
+   541→    </nav>
+   542→  );
+   543→
+   544→  // ─── Stars component ───
+   545→  const StarRating = ({ rating }: { rating: number }) => (
+   546→    <div className="flex items-center gap-0.5">
+   547→      {Array.from({ length: 5 }).map((_, i) => (
+   548→        <Star
+   549→          key={i}
+   550→          className={`h-3.5 w-3.5 ${i < Math.round(rating) ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground/30'}`}
+   551→        />
+   552→      ))}
+   553→    </div>
+   554→  );
+   555→
+   556→  // ─── Pagination component ───
+   557→  const Pagination = ({ page, totalPages, onPageChange }: { page: number; totalPages: number; onPageChange: (p: number) => void }) => {
+   558→    if (totalPages <= 1) return null;
+   559→    return (
+   560→      <div className="flex items-center justify-between pt-3">
+   561→        <p className="text-sm text-muted-foreground">
+   562→          Page {page} of {totalPages}
+   563→        </p>
+   564→        <div className="flex items-center gap-1">
+   565→          <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => onPageChange(page - 1)}>Prev</Button>
+   566→          {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => (
+   567→            <Button
+   568→              key={i + 1}
+   569→              variant={page === i + 1 ? 'default' : 'outline'}
+   570→              size="sm"
+   571→              className="w-8 h-8 p-0"
+   572→              onClick={() => onPageChange(i + 1)}
+   573→            >
+   574→              {i + 1}
+   575→            </Button>
+   576→          ))}
+   577→          {totalPages > 5 && <span className="text-muted-foreground text-sm px-1">...</span>}
+   578→          <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => onPageChange(page + 1)}>Next</Button>
+   579→        </div>
+   580→      </div>
+   581→    );
+   582→  };
+   583→
+   584→  return (
+   585→    <>
+   586→      <style>{scrollbarStyles}</style>
+   587→      <div className="w-full">
+   588→        {/* Header */}
+   589→        <div className="flex items-center justify-between mb-4">
+   590→          <h1 className="text-xl md:text-2xl font-bold">Admin Dashboard</h1>
+   591→          <div className="flex items-center gap-2">
+   592→            <Button variant="outline" size="sm" className="gap-1">
+   593→              <RefreshCw className="h-3.5 w-3.5" />
+   594→              <span className="hidden sm:inline">Refresh</span>
+   595→            </Button>
+   596→            <Button variant="outline" size="sm" className="gap-1">
+   597→              <Download className="h-3.5 w-3.5" />
+   598→              <span className="hidden sm:inline">Export</span>
+   599→            </Button>
+   600→          </div>
+   601→        </div>
+   602→
+   603→        <div className="flex flex-col lg:flex-row gap-6">
+   604→          {/* ─── Desktop Sidebar ─── */}
+   605→          <aside className="hidden lg:block w-60 shrink-0">
+   606→            <Card className="sticky top-6">
+   607→              <CardContent className="p-3">
+   608→                <div className="flex items-center gap-3 p-3 mb-2">
+   609→                  <Avatar className="h-10 w-10">
+   610→                    <AvatarFallback className="bg-red-100 text-red-700 font-semibold">
+   611→                      {user.name.charAt(0).toUpperCase()}
+   612→                    </AvatarFallback>
+   613→                  </Avatar>
+   614→                  <div className="min-w-0">
+   615→                    <p className="font-semibold text-sm truncate">{user.name}</p>
+   616→                    <Badge variant="outline" className={roleConfig.admin?.color}>
+   617→                      {roleConfig.admin?.label}
+   618→                    </Badge>
+   619→                  </div>
+   620→                </div>
+   621→                <ScrollArea>
+   622→                  <SidebarNav />
+   623→                </ScrollArea>
+   624→              </CardContent>
+   625→            </Card>
+   626→          </aside>
+   627→
+   628→          {/* ─── Mobile Nav ─── */}
+   629→          <div className="lg:hidden">
+   630→            <Sheet open={isMobileNavOpen} onOpenChange={setIsMobileNavOpen}>
+   631→              <SheetTrigger asChild>
+   632→                <Button variant="outline" size="sm" className="gap-2 mb-4">
+   633→                  <Menu className="h-4 w-4" />
+   634→                  Navigation
+   635→                </Button>
+   636→              </SheetTrigger>
+   637→              <SheetContent side="left" className="w-60 p-0">
+   638→                <SheetHeader className="p-4 pb-2">
+   639→                  <SheetTitle className="text-left">Admin Panel</SheetTitle>
+   640→                </SheetHeader>
+   641→                <div className="flex items-center gap-3 px-4 py-2">
+   642→                  <Avatar className="h-10 w-10">
+   643→                    <AvatarFallback className="bg-red-100 text-red-700 font-semibold">
+   644→                      {user.name.charAt(0).toUpperCase()}
+   645→                    </AvatarFallback>
+   646→                  </Avatar>
+   647→                  <div className="min-w-0">
+   648→                    <p className="font-semibold text-sm truncate">{user.name}</p>
+   649→                    <Badge variant="outline" className={roleConfig.admin?.color}>
+   650→                      {roleConfig.admin?.label}
+   651→                    </Badge>
+   652→                  </div>
+   653→                </div>
+   654→                <SidebarNav onNavigate={() => setIsMobileNavOpen(false)} />
+   655→              </SheetContent>
+   656→            </Sheet>
+   657→          </div>
+   658→
+   659→          {/* ─── Main Content ─── */}
+   660→          <main className="flex-1 min-w-0">
+   661→            {loading ? (
+   662→              <div className="flex items-center justify-center py-20">
+   663→                <Loader2 className="h-8 w-8 animate-spin text-emerald-500" />
+   664→              </div>
+   665→            ) : (
+   666→              <>
+   667→
+   668→                {/* ════════════════════════════════════════════
+   669→                    OVERVIEW TAB
+   670→                ════════════════════════════════════════════ */}
+   671→                {activeTab === 'overview' && (
+   672→                  <div className="space-y-6">
+   673→                    {/* Stat Cards */}
+   674→                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+   675→                      <StatCard
+   676→                        title="Total Revenue"
+   677→                        value={dashboardStats.totalRevenue.toLocaleString()}
+   678→                        growth={dashboardStats.revenueGrowth}
+   679→                        prefix="৳"
+   680→                        icon={<DollarSign className="h-5 w-5 md:h-6 md:w-6" />}
+   681→                      />
+   682→                      <StatCard
+   683→                        title="Total Orders"
+   684→                        value={dashboardStats.totalOrders.toLocaleString()}
+   685→                        growth={dashboardStats.orderGrowth}
+   686→                        icon={<ShoppingCart className="h-5 w-5 md:h-6 md:w-6" />}
+   687→                      />
+   688→                      <StatCard
+   689→                        title="Total Users"
+   690→                        value={dashboardStats.totalUsers.toLocaleString()}
+   691→                        growth={dashboardStats.userGrowth}
+   692→                        icon={<Users className="h-5 w-5 md:h-6 md:w-6" />}
+   693→                      />
+   694→                      <StatCard
+   695→                        title="Total Products"
+   696→                        value={dashboardStats.totalProducts.toLocaleString()}
+   697→                        growth={dashboardStats.productGrowth}
+   698→                        icon={<Package className="h-5 w-5 md:h-6 md:w-6" />}
+   699→                      />
+   700→                    </div>
+   701→
+   702→                    {/* Charts Row */}
+   703→                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+   704→                      {/* Revenue Chart */}
+   705→                      <Card>
+   706→                        <CardHeader className="pb-2">
+   707→                          <CardTitle className="text-base">Revenue Trend</CardTitle>
+   708→                          <CardDescription>Revenue over the past 30 days</CardDescription>
+   709→                        </CardHeader>
+   710→                        <CardContent>
+   711→                          {analyticsData.length > 0 ? (
+   712→                            <ResponsiveContainer width="100%" height={300}>
+   713→                              <AreaChart data={analyticsData}>
+   714→                                <defs>
+   715→                                  <linearGradient id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
+   716→                                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+   717→                                    <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+   718→                                  </linearGradient>
+   719→                                </defs>
+   720→                                <CartesianGrid strokeDasharray="3 3" />
+   721→                                <XAxis
+   722→                                  dataKey="date"
+   723→                                  tick={{ fontSize: 11 }}
+   724→                                  tickFormatter={(v) => new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+   725→                                  interval="preserveStartEnd"
+   726→                                />
+   727→                                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `৳${(v / 1000).toFixed(0)}k`} />
+   728→                                <Tooltip
+   729→                                  formatter={(value: number, name: string) => [
+   730→                                    name === 'revenue' ? formatCurrency(value) : value,
+   731→                                    name === 'revenue' ? 'Revenue' : 'Orders'
+   732→                                  ]}
+   733→                                  labelFormatter={(label) => new Date(label as string).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+   734→                                />
+   735→                                <Area
+   736→                                  type="monotone"
+   737→                                  dataKey="revenue"
+   738→                                  stroke="#10b981"
+   739→                                  fill="url(#revenueGrad)"
+   740→                                  strokeWidth={2}
+   741→                                  name="revenue"
+   742→                                />
+   743→                              </AreaChart>
+   744→                            </ResponsiveContainer>
+   745→                          ) : (
+   746→                            <div className="h-[300px] flex items-center justify-center text-muted-foreground text-sm">
+   747→                              No analytics data available
+   748→                            </div>
+   749→                          )}
+   750→                        </CardContent>
+   751→                      </Card>
+   752→
+   753→                      {/* Orders Chart */}
+   754→                      <Card>
+   755→                        <CardHeader className="pb-2">
+   756→                          <CardTitle className="text-base">Daily Orders</CardTitle>
+   757→                          <CardDescription>Order volume over the past 30 days</CardDescription>
+   758→                        </CardHeader>
+   759→                        <CardContent>
+   760→                          {analyticsData.length > 0 ? (
+   761→                            <ResponsiveContainer width="100%" height={300}>
+   762→                              <BarChart data={analyticsData}>
+   763→                                <CartesianGrid strokeDasharray="3 3" />
+   764→                                <XAxis
+   765→                                  dataKey="date"
+   766→                                  tick={{ fontSize: 11 }}
+   767→                                  tickFormatter={(v) => new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+   768→                                  interval="preserveStartEnd"
+   769→                                />
+   770→                                <YAxis tick={{ fontSize: 11 }} />
+   771→                                <Tooltip
+   772→                                  formatter={(value: number) => [value, 'Orders']}
+   773→                                  labelFormatter={(label) => new Date(label as string).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+   774→                                />
+   775→                                <Bar dataKey="orders" fill="#f59e0b" radius={[4, 4, 0, 0]} name="orders" />
+   776→                              </BarChart>
+   777→                            </ResponsiveContainer>
+   778→                          ) : (
+   779→                            <div className="h-[300px] flex items-center justify-center text-muted-foreground text-sm">
+   780→                              No analytics data available
+   781→                            </div>
+   782→                          )}
+   783→                        </CardContent>
+   784→                      </Card>
+   785→                    </div>
+   786→
+   787→                    {/* Bottom Row: Recent Orders + Top Products + Order Status Pie */}
+   788→                    <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+   789→                      {/* Recent Orders Table */}
+   790→                      <Card className="xl:col-span-2">
+   791→                        <CardHeader className="pb-2">
+   792→                          <div className="flex items-center justify-between">
+   793→                            <div>
+   794→                              <CardTitle className="text-base">Recent Orders</CardTitle>
+   795→                              <CardDescription>Latest 5 orders</CardDescription>
+   796→                            </div>
+   797→                            <Button variant="outline" size="sm" className="gap-1" onClick={() => setActiveTab('orders')}>
+   798→                              View All
+   799→                              <ChevronRight className="h-3.5 w-3.5" />
+   800→                            </Button>
+   801→                          </div>
+   802→                        </CardHeader>
+   803→                        <CardContent>
+   804→                          {recentOrders.length === 0 ? (
+   805→                            <p className="text-sm text-muted-foreground text-center py-8">No orders yet</p>
+   806→                          ) : (
+   807→                            <ScrollArea className="max-h-96">
+   808→                              <Table>
+   809→                                <TableHeader>
+   810→                                  <TableRow>
+   811→                                    <TableHead>Order #</TableHead>
+   812→                                    <TableHead className="hidden sm:table-cell">Date</TableHead>
+   813→                                    <TableHead>Total</TableHead>
+   814→                                    <TableHead>Status</TableHead>
+   815→                                    <TableHead className="text-right">Action</TableHead>
+   816→                                  </TableRow>
+   817→                                </TableHeader>
+   818→                                <TableBody>
+   819→                                  {recentOrders.map((order) => (
+   820→                                    <TableRow key={order.id}>
+   821→                                      <TableCell className="font-mono text-sm font-medium">#{order.orderNumber}</TableCell>
+   822→                                      <TableCell className="hidden sm:table-cell text-sm">{formatDate(order.createdAt)}</TableCell>
+   823→                                      <TableCell className="font-semibold text-sm">{formatCurrency(order.total)}</TableCell>
+   824→                                      <TableCell>
+   825→                                        <Badge variant="outline" className={orderStatusConfig[order.status]?.color ?? ''}>
+   826→                                          {orderStatusConfig[order.status]?.label ?? order.status}
+   827→                                        </Badge>
+   828→                                      </TableCell>
+   829→                                      <TableCell className="text-right">
+   830→                                        <Button variant="ghost" size="sm" onClick={() => setActiveTab('orders')}>
+   831→                                          <Eye className="h-4 w-4" />
+   832→                                        </Button>
+   833→                                      </TableCell>
+   834→                                    </TableRow>
+   835→                                  ))}
+   836→                                </TableBody>
+   837→                              </Table>
+   838→                            </ScrollArea>
+   839→                          )}
+   840→                        </CardContent>
+   841→                      </Card>
+   842→
+   843→                      {/* Order Status Pie + Top Products */}
+   844→                      <div className="space-y-6">
+   845→                        {/* Order Status Pie */}
+   846→                        <Card>
+   847→                          <CardHeader className="pb-2">
+   848→                            <CardTitle className="text-base">Order Status</CardTitle>
+   849→                          </CardHeader>
+   850→                          <CardContent>
+   851→                            {orderStatusPieData.length > 0 ? (
+   852→                              <ResponsiveContainer width="100%" height={200}>
+   853→                                <PieChart>
+   854→                                  <Pie
+   855→                                    data={orderStatusPieData}
+   856→                                    cx="50%"
+   857→                                    cy="50%"
+   858→                                    innerRadius={50}
+   859→                                    outerRadius={80}
+   860→                                    paddingAngle={3}
+   861→                                    dataKey="value"
+   862→                                  >
+   863→                                    {orderStatusPieData.map((_, index) => (
+   864→                                      <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+   865→                                    ))}
+   866→                                  </Pie>
+   867→                                  <Tooltip />
+   868→                                </PieChart>
+   869→                              </ResponsiveContainer>
+   870→                            ) : (
+   871→                              <div className="h-[200px] flex items-center justify-center text-muted-foreground text-sm">
+   872→                                No data
+   873→                              </div>
+   874→                            )}
+   875→                            <div className="flex flex-wrap gap-2 mt-2">
+   876→                              {orderStatusPieData.map((entry, index) => (
+   877→                                <div key={entry.name} className="flex items-center gap-1.5 text-xs">
+   878→                                  <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }} />
+   879→                                  <span className="text-muted-foreground">{entry.name} ({entry.value})</span>
+   880→                                </div>
+   881→                              ))}
+   882→                            </div>
+   883→                          </CardContent>
+   884→                        </Card>
+   885→
+   886→                        {/* Top Products */}
+   887→                        <Card>
+   888→                          <CardHeader className="pb-2">
+   889→                            <CardTitle className="text-base">Top Products</CardTitle>
+   890→                            <CardDescription>By sales count</CardDescription>
+   891→                          </CardHeader>
+   892→                          <CardContent>
+   893→                            {products.length === 0 ? (
+   894→                              <p className="text-sm text-muted-foreground text-center py-4">No products</p>
+   895→                            ) : (
+   896→                              <div className="space-y-3">
+   897→                                {products.slice(0, 5).map((product, idx) => (
+   898→                                  <div key={product.id} className="flex items-center gap-3">
+   899→                                    <span className="text-sm font-bold text-muted-foreground w-5">#{idx + 1}</span>
+   900→                                    <div className="h-10 w-10 rounded-md bg-muted flex items-center justify-center shrink-0 overflow-hidden">
+   901→                                      {product.images?.[0] ? (
+   902→                                        <img src={product.images[0].url} alt={product.name} className="h-full w-full object-cover" />
+   903→                                      ) : (
+   904→                                        <Package className="h-4 w-4 text-muted-foreground/40" />
+   905→                                      )}
+   906→                                    </div>
+   907→                                    <div className="flex-1 min-w-0">
+   908→                                      <p className="text-sm font-medium truncate">{product.name}</p>
+   909→                                      <p className="text-xs text-muted-foreground">{product.soldCount} sold</p>
+   910→                                    </div>
+   911→                                    <span className="text-sm font-semibold text-emerald-600">{formatCurrency(product.price)}</span>
+   912→                                  </div>
+   913→                                ))}
+   914→                              </div>
+   915→                            )}
+   916→                          </CardContent>
+   917→                        </Card>
+   918→                      </div>
+   919→                    </div>
+   920→                  </div>
+   921→                )}
+   922→
+   923→                {/* ════════════════════════════════════════════
+   924→                    ORDERS TAB
+   925→                ════════════════════════════════════════════ */}
+   926→                {activeTab === 'orders' && (
+   927→                  <Card>
+   928→                    <CardHeader>
+   929→                      <CardTitle>All Orders</CardTitle>
+   930→                      <CardDescription>Manage and track all customer orders</CardDescription>
+   931→                    </CardHeader>
+   932→                    <CardContent className="space-y-4">
+   933→                      {/* Search & Filter */}
+   934→                      <div className="flex flex-col sm:flex-row gap-3">
+   935→                        <div className="relative flex-1">
+   936→                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   937→                          <Input
+   938→                            placeholder="Search by order # or product name..."
+   939→                            value={orderSearch}
+   940→                            onChange={(e) => { setOrderSearch(e.target.value); setOrderPage(1); }}
+   941→                            className="pl-9"
+   942→                          />
+   943→                        </div>
+   944→                        <Select value={orderStatusFilter} onValueChange={(v) => { setOrderStatusFilter(v); setOrderPage(1); }}>
+   945→                          <SelectTrigger className="w-full sm:w-44">
+   946→                            <Filter className="h-4 w-4 mr-2 text-muted-foreground" />
+   947→                            <SelectValue placeholder="Filter status" />
+   948→                          </SelectTrigger>
+   949→                          <SelectContent>
+   950→                            <SelectItem value="all">All Statuses</SelectItem>
+   951→                            <SelectItem value="pending">Pending</SelectItem>
+   952→                            <SelectItem value="confirmed">Confirmed</SelectItem>
+   953→                            <SelectItem value="processing">Processing</SelectItem>
+   954→                            <SelectItem value="shipped">Shipped</SelectItem>
+   955→                            <SelectItem value="delivered">Delivered</SelectItem>
+   956→                            <SelectItem value="cancelled">Cancelled</SelectItem>
+   957→                          </SelectContent>
+   958→                        </Select>
+   959→                      </div>
+   960→
+   961→                      {/* Orders Table */}
+   962→                      {filteredOrders.length === 0 ? (
+   963→                        <div className="text-center py-12 text-muted-foreground text-sm">
+   964→                          No orders found matching your criteria.
+   965→                        </div>
+   966→                      ) : (
+   967→                        <>
+   968→                          <ScrollArea className="max-h-[500px]">
+   969→                            <Table>
+   970→                              <TableHeader>
+   971→                                <TableRow>
+   972→                                  <TableHead className="w-8"></TableHead>
+   973→                                  <TableHead>Order #</TableHead>
+   974→                                  <TableHead className="hidden md:table-cell">Items</TableHead>
+   975→                                  <TableHead>Total</TableHead>
+   976→                                  <TableHead className="hidden sm:table-cell">Payment</TableHead>
+   977→                                  <TableHead>Status</TableHead>
+   978→                                  <TableHead className="hidden lg:table-cell">Date</TableHead>
+   979→                                </TableRow>
+   980→                              </TableHeader>
+   981→                              <TableBody>
+   982→                                {paginatedOrders.map((order) => (
+   983→                                  <>
+   984→                                    <TableRow key={order.id} className="cursor-pointer" onClick={() => setExpandedOrderId(expandedOrderId === order.id ? null : order.id)}>
+   985→                                      <TableCell>
+   986→                                        <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${expandedOrderId === order.id ? 'rotate-180' : ''}`} />
+   987→                                      </TableCell>
+   988→                                      <TableCell className="font-mono text-sm font-medium">#{order.orderNumber}</TableCell>
+   989→                                      <TableCell className="hidden md:table-cell text-sm">{order.items.length} item{order.items.length > 1 ? 's' : ''}</TableCell>
+   990→                                      <TableCell className="font-semibold text-sm">{formatCurrency(order.total)}</TableCell>
+   991→                                      <TableCell className="hidden sm:table-cell">
+   992→                                        <Badge variant="outline" className={order.paymentStatus === 'paid' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-yellow-50 text-yellow-700 border-yellow-200'}>
+   993→                                          {order.paymentStatus}
+   994→                                        </Badge>
+   995→                                      </TableCell>
+   996→                                      <TableCell onClick={(e) => e.stopPropagation()}>
+   997→                                        <Select value={order.status} onValueChange={(v) => handleOrderStatusChange(order.id, v)}>
+   998→                                          <SelectTrigger className={`h-7 w-28 text-xs ${orderStatusConfig[order.status]?.color}`}>
+   999→                                            <SelectValue />
+  1000→                                          </SelectTrigger>
+  1001→                                          <SelectContent>
+  1002→                                            {Object.entries(orderStatusConfig).map(([key, cfg]) => (
+  1003→                                              <SelectItem key={key} value={key}>{cfg.label}</SelectItem>
+  1004→                                            ))}
+  1005→                                          </SelectContent>
+  1006→                                        </Select>
+  1007→                                      </TableCell>
+  1008→                                      <TableCell className="hidden lg:table-cell text-sm">{formatDate(order.createdAt)}</TableCell>
+  1009→                                    </TableRow>
+  1010→                                    {/* Expandable order items row */}
+  1011→                                    {expandedOrderId === order.id && (
+  1012→                                      <TableRow key={`${order.id}-items`}>
+  1013→                                        <TableCell colSpan={7} className="bg-muted/30 p-4">
+  1014→                                          <div className="space-y-2">
+  1015→                                            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-2">Order Items</p>
+  1016→                                            {order.items.map((item) => (
+  1017→                                              <div key={item.id} className="flex items-center gap-3 text-sm">
+  1018→                                                <div className="h-10 w-10 rounded-md bg-background border flex items-center justify-center shrink-0 overflow-hidden">
+  1019→                                                  {item.productImage ? (
+  1020→                                                    <img src={item.productImage} alt="" className="h-full w-full object-cover" />
+  1021→                                                  ) : (
+  1022→                                                    <Package className="h-4 w-4 text-muted-foreground/40" />
+  1023→                                                  )}
+  1024→                                                </div>
+  1025→                                                <div className="flex-1 min-w-0">
+  1026→                                                  <p className="font-medium truncate">{item.productName}</p>
+  1027→                                                  <p className="text-xs text-muted-foreground">Qty: {item.quantity} {item.variant ? `· ${item.variant}` : ''}</p>
+  1028→                                                </div>
+  1029→                                                <span className="font-semibold">{formatCurrency(item.total)}</span>
+  1030→                                              </div>
+  1031→                                            ))}
+  1032→                                            {order.trackingNumber && (
+  1033→                                              <p className="text-xs text-muted-foreground mt-2">
+  1034→                                                Tracking: <span className="font-mono">{order.trackingNumber}</span>
+  1035→                                              </p>
+  1036→                                            )}
+  1037→                                          </div>
+  1038→                                        </TableCell>
+  1039→                                      </TableRow>
+  1040→                                    )}
+  1041→                                  </>
+  1042→                                ))}
+  1043→                              </TableBody>
+  1044→                            </Table>
+  1045→                          </ScrollArea>
+  1046→
+  1047→                          <Pagination page={orderPage} totalPages={totalOrderPages} onPageChange={setOrderPage} />
+  1048→                        </>
+  1049→                      )}
+  1050→                    </CardContent>
+  1051→                  </Card>
+  1052→                )}
+  1053→
+  1054→                {/* ════════════════════════════════════════════
+  1055→                    PRODUCTS TAB
+  1056→                ════════════════════════════════════════════ */}
+  1057→                {activeTab === 'products' && (
+  1058→                  <Card>
+  1059→                    <CardHeader>
+  1060→                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+  1061→                        <div>
+  1062→                          <CardTitle>Products</CardTitle>
+  1063→                          <CardDescription>Manage your product catalog</CardDescription>
+  1064→                        </div>
+  1065→                        <div className="flex flex-col sm:flex-row gap-2">
+  1066→                          <div className="relative w-full sm:w-72">
+  1067→                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+  1068→                            <Input
+  1069→                              placeholder="Search products..."
+  1070→                              value={productSearch}
+  1071→                              onChange={(e) => { setProductSearch(e.target.value); setProductPage(1); }}
+  1072→                              className="pl-9"
+  1073→                            />
+  1074→                          </div>
+  1075→                          <Button size="sm" className="gap-1 shrink-0" onClick={() => handleOpenProductDialog()}>
+  1076→                            <Plus className="h-4 w-4" />
+  1077→                            Add Product
+  1078→                          </Button>
+  1079→                        </div>
+  1080→                      </div>
+  1081→                    </CardHeader>
+  1082→                    <CardContent>
+  1083→                      {/* Status filter */}
+  1084→                      <div className="flex gap-2 mb-4">
+  1085→                        {['all', 'active', 'draft'].map(s => (
+  1086→                          <Button
+  1087→                            key={s}
+  1088→                            variant={productStatusFilter === s ? 'default' : 'outline'}
+  1089→                            size="sm"
+  1090→                            className="h-7 text-xs"
+  1091→                            onClick={() => { setProductStatusFilter(s); setProductPage(1); }}
+  1092→                          >
+  1093→                            {s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}
+  1094→                          </Button>
+  1095→                        ))}
+  1096→                      </div>
+  1097→
+  1098→                      {paginatedProducts.length === 0 ? (
+  1099→                        <div className="text-center py-12 text-muted-foreground text-sm">
+  1100→                          No products found.
+  1101→                        </div>
+  1102→                      ) : (
+  1103→                        <>
+  1104→                          <ScrollArea className="max-h-[500px]">
+  1105→                            <Table>
+  1106→                              <TableHeader>
+  1107→                                <TableRow>
+  1108→                                  <TableHead className="w-12"></TableHead>
+  1109→                                  <TableHead>Name</TableHead>
+  1110→                                  <TableHead className="hidden md:table-cell">Category</TableHead>
+  1111→                                  <TableHead>Price</TableHead>
+  1112→                                  <TableHead className="hidden sm:table-cell">Stock</TableHead>
+  1113→                                  <TableHead>Status</TableHead>
+  1114→                                  <TableHead className="text-right">Actions</TableHead>
+  1115→                                </TableRow>
+  1116→                              </TableHeader>
+  1117→                              <TableBody>
+  1118→                                {paginatedProducts.map((product) => (
+  1119→                                  <TableRow key={product.id}>
+  1120→                                    <TableCell>
+  1121→                                      <div className="h-10 w-10 rounded-md bg-muted flex items-center justify-center overflow-hidden">
+  1122→                                        {product.images?.[0] ? (
+  1123→                                          <img src={product.images[0].url} alt={product.name} className="h-full w-full object-cover" />
+  1124→                                        ) : (
+  1125→                                          <ImageIcon className="h-4 w-4 text-muted-foreground/40" />
+  1126→                                        )}
+  1127→                                      </div>
+  1128→                                    </TableCell>
+  1129→                                    <TableCell>
+  1130→                                      <div>
+  1131→                                        <p className="font-medium text-sm line-clamp-1">{product.name}</p>
+  1132→                                        <p className="text-xs text-muted-foreground md:hidden">{product.category?.name}</p>
+  1133→                                        <div className="flex gap-1 mt-0.5">
+  1134→                                          {product.isFeatured && <Badge variant="outline" className="text-[10px] h-4 px-1 py-0">Featured</Badge>}
+  1135→                                          {product.isTrending && <Badge variant="outline" className="text-[10px] h-4 px-1 py-0">Trending</Badge>}
+  1136→                                          {product.isNewArrival && <Badge variant="outline" className="text-[10px] h-4 px-1 py-0">New</Badge>}
+  1137→                                        </div>
+  1138→                                      </div>
+  1139→                                    </TableCell>
+  1140→                                    <TableCell className="hidden md:table-cell text-sm">
+  1141→                                      {product.category?.name ?? '—'}
+  1142→                                    </TableCell>
+  1143→                                    <TableCell>
+  1144→                                      <div>
+  1145→                                        <span className="font-semibold text-sm">{formatCurrency(product.discountPrice ?? product.price)}</span>
+  1146→                                        {product.discountPrice && (
+  1147→                                          <span className="text-xs text-muted-foreground line-through ml-1">{formatCurrency(product.price)}</span>
+  1148→                                        )}
+  1149→                                      </div>
+  1150→                                    </TableCell>
+  1151→                                    <TableCell className="hidden sm:table-cell">
+  1152→                                      <div className="space-y-1">
+  1153→                                        <span className="text-sm font-medium">{product.stock}</span>
+  1154→                                        {product.stock > 0 && product.stock <= 10 && (
+  1155→                                          <p className="text-xs text-yellow-600">Low stock</p>
+  1156→                                        )}
+  1157→                                      </div>
+  1158→                                    </TableCell>
+  1159→                                    <TableCell>
+  1160→                                      {product.status === 'active' ? (
+  1161→                                        product.stock > 10 ? (
+  1162→                                          <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-100">In Stock</Badge>
+  1163→                                        ) : product.stock > 0 ? (
+  1164→                                          <Badge className="bg-yellow-100 text-yellow-800 border-yellow-300 hover:bg-yellow-100">Low Stock</Badge>
+  1165→                                        ) : (
+  1166→                                          <Badge className="bg-red-100 text-red-800 border-red-300 hover:bg-red-100">Out of Stock</Badge>
+  1167→                                        )
+  1168→                                      ) : (
+  1169→                                        <Badge variant="outline">Inactive</Badge>
+  1170→                                      )}
+  1171→                                    </TableCell>
+  1172→                                    <TableCell className="text-right">
+  1173→                                      <div className="flex items-center justify-end gap-1">
+  1174→                                        <Button variant="ghost" size="sm" onClick={() => handleOpenProductDialog(product)}>
+  1175→                                          <Pencil className="h-4 w-4" />
+  1176→                                        </Button>
+  1177→                                        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => handleDeleteProduct(product.id)}>
+  1178→                                          <Trash2 className="h-4 w-4" />
+  1179→                                        </Button>
+  1180→                                      </div>
+  1181→                                    </TableCell>
+  1182→                                  </TableRow>
+  1183→                                ))}
+  1184→                              </TableBody>
+  1185→                            </Table>
+  1186→                          </ScrollArea>
+  1187→
+  1188→                          <Pagination page={productPage} totalPages={totalProductPages} onPageChange={setProductPage} />
+  1189→                        </>
+  1190→                      )}
+  1191→                    </CardContent>
+  1192→                  </Card>
+  1193→                )}
+  1194→
+  1195→                {/* ════════════════════════════════════════════
+  1196→                    USERS TAB
+  1197→                ════════════════════════════════════════════ */}
+  1198→                {activeTab === 'users' && (
+  1199→                  <Card>
+  1200→                    <CardHeader>
+  1201→                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+  1202→                        <div>
+  1203→                          <CardTitle>Users</CardTitle>
+  1204→                          <CardDescription>Manage registered users</CardDescription>
+  1205→                        </div>
+  1206→                        <div className="relative w-full sm:w-72">
+  1207→                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+  1208→                          <Input
+  1209→                            placeholder="Search users..."
+  1210→                            value={userSearch}
+  1211→                            onChange={(e) => { setUserSearch(e.target.value); setUserPage(1); }}
+  1212→                            className="pl-9"
+  1213→                          />
+  1214→                        </div>
+  1215→                      </div>
+  1216→                    </CardHeader>
+  1217→                    <CardContent>
+  1218→                      {filteredUsers.length === 0 ? (
+  1219→                        <div className="flex flex-col items-center justify-center py-12 text-center">
+  1220→                          <Users className="h-16 w-16 text-muted-foreground/30 mb-4" />
+  1221→                          <h3 className="font-semibold text-lg mb-1">No users found</h3>
+  1222→                          <p className="text-muted-foreground text-sm">Users will appear here when they register.</p>
+  1223→                        </div>
+  1224→                      ) : (
+  1225→                        <>
+  1226→                          <ScrollArea className="max-h-[500px]">
+  1227→                            <Table>
+  1228→                              <TableHeader>
+  1229→                                <TableRow>
+  1230→                                  <TableHead>User</TableHead>
+  1231→                                  <TableHead className="hidden sm:table-cell">Email</TableHead>
+  1232→                                  <TableHead>Role</TableHead>
+  1233→                                  <TableHead className="hidden md:table-cell">Orders</TableHead>
+  1234→                                  <TableHead>Status</TableHead>
+  1235→                                  <TableHead className="hidden lg:table-cell">Joined</TableHead>
+  1236→                                </TableRow>
+  1237→                              </TableHeader>
+  1238→                              <TableBody>
+  1239→                                {paginatedUsers.map((u) => (
+  1240→                                  <TableRow key={u.id}>
+  1241→                                    <TableCell>
+  1242→                                      <div className="flex items-center gap-3">
+  1243→                                        <Avatar className="h-8 w-8">
+  1244→                                          <AvatarFallback className="text-xs">{u.name.charAt(0).toUpperCase()}</AvatarFallback>
+  1245→                                        </Avatar>
+  1246→                                        <span className="font-medium text-sm">{u.name}</span>
+  1247→                                      </div>
+  1248→                                    </TableCell>
+  1249→                                    <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">{u.email}</TableCell>
+  1250→                                    <TableCell>
+  1251→                                      <Select value={u.role} onValueChange={(v) => handleUserRoleChange(u.id, v)}>
+  1252→                                        <SelectTrigger className="h-7 w-24 text-xs">
+  1253→                                          <SelectValue />
+  1254→                                        </SelectTrigger>
+  1255→                                        <SelectContent>
+  1256→                                          <SelectItem value="customer">Customer</SelectItem>
+  1257→                                          <SelectItem value="seller">Seller</SelectItem>
+  1258→                                          <SelectItem value="admin">Admin</SelectItem>
+  1259→                                        </SelectContent>
+  1260→                                      </Select>
+  1261→                                    </TableCell>
+  1262→                                    <TableCell className="hidden md:table-cell text-sm">
+  1263→                                      <span className="font-medium">{u._count?.orders ?? 0}</span>
+  1264→                                    </TableCell>
+  1265→                                    <TableCell>
+  1266→                                      <button
+  1267→                                        onClick={() => handleUserStatusToggle(u.id, u.isActive)}
+  1268→                                        className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border transition-colors ${
+  1269→                                          u.isActive
+  1270→                                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+  1271→                                            : 'bg-muted text-muted-foreground border-border hover:bg-muted/80'
+  1272→                                        }`}
+  1273→                                      >
+  1274→                                        <span className={`h-1.5 w-1.5 rounded-full ${u.isActive ? 'bg-emerald-500' : 'bg-muted-foreground/40'}`} />
+  1275→                                        {u.isActive ? 'Active' : 'Inactive'}
+  1276→                                      </button>
+  1277→                                    </TableCell>
+  1278→                                    <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
+  1279→                                      {u.createdAt ? formatDate(u.createdAt) : '—'}
+  1280→                                    </TableCell>
+  1281→                                  </TableRow>
+  1282→                                ))}
+  1283→                              </TableBody>
+  1284→                            </Table>
+  1285→                          </ScrollArea>
+  1286→
+  1287→                          <Pagination page={userPage} totalPages={totalUserPages} onPageChange={setUserPage} />
+  1288→                        </>
+  1289→                      )}
+  1290→                    </CardContent>
+  1291→                  </Card>
+  1292→                )}
+  1293→
+  1294→                {/* ════════════════════════════════════════════
+  1295→                    COUPONS TAB
+  1296→                ════════════════════════════════════════════ */}
+  1297→                {activeTab === 'coupons' && (
+  1298→                  <Card>
+  1299→                    <CardHeader>
+  1300→                      <div className="flex items-center justify-between">
+  1301→                        <div>
+  1302→                          <CardTitle>Coupons</CardTitle>
+  1303→                          <CardDescription>Manage discount coupons and promotions</CardDescription>
+  1304→                        </div>
+  1305→                        <Button size="sm" className="gap-1">
+  1306→                          <Tag className="h-4 w-4" />
+  1307→                          Create Coupon
+  1308→                        </Button>
+  1309→                      </div>
+  1310→                    </CardHeader>
+  1311→                    <CardContent>
+  1312→                      {coupons.length === 0 ? (
+  1313→                        <div className="flex flex-col items-center justify-center py-12 text-center">
+  1314→                          <Tag className="h-16 w-16 text-muted-foreground/30 mb-4" />
+  1315→                          <h3 className="font-semibold text-lg mb-1">No coupons</h3>
+  1316→                          <p className="text-muted-foreground text-sm">Create your first discount coupon</p>
+  1317→                        </div>
+  1318→                      ) : (
+  1319→                        <ScrollArea className="max-h-96">
+  1320→                          <Table>
+  1321→                            <TableHeader>
+  1322→                              <TableRow>
+  1323→                                <TableHead>Code</TableHead>
+  1324→                                <TableHead>Type</TableHead>
+  1325→                                <TableHead>Value</TableHead>
+  1326→                                <TableHead className="hidden sm:table-cell">Min Purchase</TableHead>
+  1327→                                <TableHead className="hidden md:table-cell">Used / Limit</TableHead>
+  1328→                                <TableHead>Status</TableHead>
+  1329→                                <TableHead className="text-right">Actions</TableHead>
+  1330→                              </TableRow>
+  1331→                            </TableHeader>
+  1332→                            <TableBody>
+  1333→                              {coupons.map((coupon) => (
+  1334→                                <TableRow key={coupon.id}>
+  1335→                                  <TableCell>
+  1336→                                    <code className="bg-muted px-2 py-1 rounded text-sm font-mono font-semibold">{coupon.code}</code>
+  1337→                                  </TableCell>
+  1338→                                  <TableCell className="text-sm capitalize">{coupon.type}</TableCell>
+  1339→                                  <TableCell className="font-semibold text-sm">
+  1340→                                    {coupon.type === 'percentage' ? `${coupon.value}%` : formatCurrency(coupon.value)}
+  1341→                                  </TableCell>
+  1342→                                  <TableCell className="hidden sm:table-cell text-sm">
+  1343→                                    {coupon.minPurchase ? formatCurrency(coupon.minPurchase) : '—'}
+  1344→                                  </TableCell>
+  1345→                                  <TableCell className="hidden md:table-cell">
+  1346→                                    <div className="flex items-center gap-2">
+  1347→                                      <Progress value={coupon.usageLimit ? (coupon.usedCount / coupon.usageLimit) * 100 : 0} className="h-2 w-16" />
+  1348→                                      <span className="text-xs text-muted-foreground">{coupon.usedCount}{coupon.usageLimit ? `/${coupon.usageLimit}` : ''}</span>
+  1349→                                    </div>
+  1350→                                  </TableCell>
+  1351→                                  <TableCell>
+  1352→                                    <Badge variant={coupon.status === 'active' ? 'default' : 'outline'} className={coupon.status === 'active' ? 'bg-emerald-500' : ''}>
+  1353→                                      {coupon.status}
+  1354→                                    </Badge>
+  1355→                                  </TableCell>
+  1356→                                  <TableCell className="text-right">
+  1357→                                    <Button variant="ghost" size="sm">
+  1358→                                      <MoreHorizontal className="h-4 w-4" />
+  1359→                                    </Button>
+  1360→                                  </TableCell>
+  1361→                                </TableRow>
+  1362→                              ))}
+  1363→                            </TableBody>
+  1364→                          </Table>
+  1365→                        </ScrollArea>
+  1366→                      )}
+  1367→                    </CardContent>
+  1368→                  </Card>
+  1369→                )}
+  1370→
+  1371→                {/* ════════════════════════════════════════════
+  1372→                    REVIEWS TAB
+  1373→                ════════════════════════════════════════════ */}
+  1374→                {activeTab === 'reviews' && (
+  1375→                  <Card>
+  1376→                    <CardHeader>
+  1377→                      <CardTitle>Reviews</CardTitle>
+  1378→                      <CardDescription>Monitor and manage customer reviews</CardDescription>
+  1379→                    </CardHeader>
+  1380→                    <CardContent>
+  1381→                      {reviews.length === 0 ? (
+  1382→                        <div className="flex flex-col items-center justify-center py-12 text-center">
+  1383→                          <MessageSquare className="h-16 w-16 text-muted-foreground/30 mb-4" />
+  1384→                          <h3 className="font-semibold text-lg mb-1">No reviews yet</h3>
+  1385→                          <p className="text-muted-foreground text-sm">Customer reviews will appear here</p>
+  1386→                        </div>
+  1387→                      ) : (
+  1388→                        <ScrollArea className="max-h-96">
+  1389→                          <Table>
+  1390→                            <TableHeader>
+  1391→                              <TableRow>
+  1392→                                <TableHead className="hidden lg:table-cell">Product</TableHead>
+  1393→                                <TableHead>User</TableHead>
+  1394→                                <TableHead>Rating</TableHead>
+  1395→                                <TableHead className="hidden md:table-cell">Comment</TableHead>
+  1396→                                <TableHead>Status</TableHead>
+  1397→                                <TableHead className="hidden sm:table-cell">Date</TableHead>
+  1398→                                <TableHead className="text-right">Actions</TableHead>
+  1399→                              </TableRow>
+  1400→                            </TableHeader>
+  1401→                            <TableBody>
+  1402→                              {reviews.map((review) => (
+  1403→                                <TableRow key={review.id}>
+  1404→                                  <TableCell className="hidden lg:table-cell text-sm font-medium">Product #{review.productId.slice(0, 8)}</TableCell>
+  1405→                                  <TableCell>
+  1406→                                    <div className="flex items-center gap-2">
+  1407→                                      <Avatar className="h-7 w-7">
+  1408→                                        <AvatarFallback className="text-xs">{review.user.name.charAt(0).toUpperCase()}</AvatarFallback>
+  1409→                                      </Avatar>
+  1410→                                      <span className="text-sm">{review.user.name}</span>
+  1411→                                    </div>
+  1412→                                  </TableCell>
+  1413→                                  <TableCell>
+  1414→                                    <div className="flex items-center gap-1">
+  1415→                                      <StarRating rating={review.rating} />
+  1416→                                      <span className="text-xs text-muted-foreground ml-1">({review.rating})</span>
+  1417→                                    </div>
+  1418→                                  </TableCell>
+  1419→                                  <TableCell className="hidden md:table-cell text-sm text-muted-foreground max-w-48 truncate">
+  1420→                                    {review.comment || '—'}
+  1421→                                  </TableCell>
+  1422→                                  <TableCell>
+  1423→                                    <Badge variant={review.isVerified ? 'default' : 'outline'} className={review.isVerified ? 'bg-emerald-500' : ''}>
+  1424→                                      {review.isVerified ? 'Verified' : 'Pending'}
+  1425→                                    </Badge>
+  1426→                                  </TableCell>
+  1427→                                  <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
+  1428→                                    {formatDate(review.createdAt)}
+  1429→                                  </TableCell>
+  1430→                                  <TableCell className="text-right">
+  1431→                                    <Button variant="ghost" size="sm">
+  1432→                                      <MoreHorizontal className="h-4 w-4" />
+  1433→                                    </Button>
+  1434→                                  </TableCell>
+  1435→                                </TableRow>
+  1436→                              ))}
+  1437→                            </TableBody>
+  1438→                          </Table>
+  1439→                        </ScrollArea>
+  1440→                      )}
+  1441→                    </CardContent>
+  1442→                  </Card>
+  1443→                )}
+  1444→
+  1445→                {/* ════════════════════════════════════════════
+  1446→                    SETTINGS TAB
+  1447→                ════════════════════════════════════════════ */}
+  1448→                {activeTab === 'settings' && (
+  1449→                  <div className="space-y-6">
+  1450→                    <Card>
+  1451→                      <CardHeader>
+  1452→                        <CardTitle>General Settings</CardTitle>
+  1453→                        <CardDescription>Configure your store settings</CardDescription>
+  1454→                      </CardHeader>
+  1455→                      <CardContent className="space-y-4">
+  1456→                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-3xl">
+  1457→                          <div className="space-y-2">
+  1458→                            <Label>Store Name</Label>
+  1459→                            <Input
+  1460→                              value={settingsForm.storeName || ''}
+  1461→                              onChange={(e) => setSettingsForm(prev => ({ ...prev, storeName: e.target.value }))}
+  1462→                            />
+  1463→                          </div>
+  1464→                          <div className="space-y-2">
+  1465→                            <Label>Tagline</Label>
+  1466→                            <Input
+  1467→                              value={settingsForm.tagline || ''}
+  1468→                              onChange={(e) => setSettingsForm(prev => ({ ...prev, tagline: e.target.value }))}
+  1469→                            />
+  1470→                          </div>
+  1471→                          <div className="space-y-2">
+  1472→                            <Label>Currency Symbol</Label>
+  1473→                            <Input
+  1474→                              value={settingsForm.currency || ''}
+  1475→                              onChange={(e) => setSettingsForm(prev => ({ ...prev, currency: e.target.value }))}
+  1476→                            />
+  1477→                          </div>
+  1478→                          <div className="space-y-2">
+  1479→                            <Label>Currency Code</Label>
+  1480→                            <Input
+  1481→                              value={settingsForm.currencyCode || ''}
+  1482→                              onChange={(e) => setSettingsForm(prev => ({ ...prev, currencyCode: e.target.value }))}
+  1483→                            />
+  1484→                          </div>
+  1485→                          <div className="space-y-2">
+  1486→                            <Label>Free Shipping Minimum (৳)</Label>
+  1487→                            <Input
+  1488→                              type="number"
+  1489→                              value={settingsForm.freeShippingMin || ''}
+  1490→                              onChange={(e) => setSettingsForm(prev => ({ ...prev, freeShippingMin: e.target.value }))}
+  1491→                            />
+  1492→                          </div>
+  1493→                          <div className="space-y-2">
+  1494→                            <Label>Default Shipping Rate (৳)</Label>
+  1495→                            <Input
+  1496→                              type="number"
+  1497→                              value={settingsForm.defaultShippingRate || ''}
+  1498→                              onChange={(e) => setSettingsForm(prev => ({ ...prev, defaultShippingRate: e.target.value }))}
+  1499→                            />
+  1500→                          </div>
+  1501→                          <div className="space-y-2">
+  1502→                            <Label>Tax Rate (%)</Label>
+  1503→                            <Input
+  1504→                              type="number"
+  1505→                              value={settingsForm.taxRate || ''}
+  1506→                              onChange={(e) => setSettingsForm(prev => ({ ...prev, taxRate: e.target.value }))}
+  1507→                            />
+  1508→                          </div>
+  1509→                        </div>
+  1510→                      </CardContent>
+  1511→                    </Card>
+  1512→
+  1513→                    <Card>
+  1514→                      <CardHeader>
+  1515→                        <CardTitle>Contact Information</CardTitle>
+  1516→                        <CardDescription>How customers can reach you</CardDescription>
+  1517→                      </CardHeader>
+  1518→                      <CardContent className="space-y-4">
+  1519→                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-3xl">
+  1520→                          <div className="space-y-2">
+  1521→                            <Label>Contact Email</Label>
+  1522→                            <Input
+  1523→                              type="email"
+  1524→                              value={settingsForm.contactEmail || ''}
+  1525→                              onChange={(e) => setSettingsForm(prev => ({ ...prev, contactEmail: e.target.value }))}
+  1526→                            />
+  1527→                          </div>
+  1528→                          <div className="space-y-2">
+  1529→                            <Label>Phone</Label>
+  1530→                            <Input
+  1531→                              value={settingsForm.phone || ''}
+  1532→                              onChange={(e) => setSettingsForm(prev => ({ ...prev, phone: e.target.value }))}
+  1533→                            />
+  1534→                          </div>
+  1535→                          <div className="space-y-2 sm:col-span-2">
+  1536→                            <Label>Address</Label>
+  1537→                            <Input
+  1538→                              value={settingsForm.address || ''}
+  1539→                              onChange={(e) => setSettingsForm(prev => ({ ...prev, address: e.target.value }))}
+  1540→                            />
+  1541→                          </div>
+  1542→                        </div>
+  1543→
+  1544→                        <div className="flex items-center gap-3 pt-2">
+  1545→                          <Button onClick={handleSaveSettings} disabled={settingsSaving} className="gap-2">
+  1546→                            {settingsSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+  1547→                            Save Settings
+  1548→                          </Button>
+  1549→                          {siteSettings !== settingsForm && (
+  1550→                            <span className="text-xs text-muted-foreground">Unsaved changes</span>
+  1551→                          )}
+  1552→                        </div>
+  1553→                      </CardContent>
+  1554→                    </Card>
+  1555→
+  1556→                    <Card>
+  1557→                      <CardHeader>
+  1558→                        <CardTitle>Danger Zone</CardTitle>
+  1559→                        <CardDescription>Irreversible and destructive actions</CardDescription>
+  1560→                      </CardHeader>
+  1561→                      <CardContent>
+  1562→                        <div className="rounded-lg border border-red-200 dark:border-red-900 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+  1563→                          <div>
+  1564→                            <p className="font-medium text-sm">Reset All Data</p>
+  1565→                            <p className="text-xs text-muted-foreground">This will permanently delete all products, orders, and user data.</p>
+  1566→                          </div>
+  1567→                          <Button variant="destructive" size="sm" className="shrink-0">Reset Data</Button>
+  1568→                        </div>
+  1569→                      </CardContent>
+  1570→                    </Card>
+  1571→                  </div>
+  1572→                )}
+  1573→              </>
+  1574→            )}
+  1575→          </main>
+  1576→        </div>
+  1577→      </div>
+  1578→
+  1579→      {/* ─── Product Create/Edit Dialog ─── */}
+  1580→      <Dialog open={productDialogOpen} onOpenChange={setProductDialogOpen}>
+  1581→        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+  1582→          <DialogHeader>
+  1583→            <DialogTitle>{editingProductId ? 'Edit Product' : 'Add New Product'}</DialogTitle>
+  1584→            <DialogDescription>
+  1585→              {editingProductId ? 'Update product details below.' : 'Fill in the details to create a new product.'}
+  1586→            </DialogDescription>
+  1587→          </DialogHeader>
+  1588→
+  1589→          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-4">
+  1590→            <div className="space-y-2">
+  1591→              <Label>Product Name *</Label>
+  1592→              <Input
+  1593→                value={productForm.name}
+  1594→                onChange={(e) => setProductForm(prev => ({
+  1595→                  ...prev,
+  1596→                  name: e.target.value,
+  1597→                  slug: !editingProductId ? generateSlug(e.target.value) : prev.slug,
+  1598→                }))}
+  1599→                placeholder="Product name"
+  1600→              />
+  1601→            </div>
+  1602→            <div className="space-y-2">
+  1603→              <Label>Slug *</Label>
+  1604→              <Input
+  1605→                value={productForm.slug}
+  1606→                onChange={(e) => setProductForm(prev => ({ ...prev, slug: e.target.value }))}
+  1607→                placeholder="product-url-slug"
+  1608→              />
+  1609→            </div>
+  1610→            <div className="space-y-2">
+  1611→              <Label>Category *</Label>
+  1612→              <Select value={productForm.categoryId} onValueChange={(v) => setProductForm(prev => ({ ...prev, categoryId: v }))}>
+  1613→                <SelectTrigger>
+  1614→                  <SelectValue placeholder="Select category" />
+  1615→                </SelectTrigger>
+  1616→                <SelectContent>
+  1617→                  {categories.map(c => (
+  1618→                    <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
+  1619→                  ))}
+  1620→                </SelectContent>
+  1621→              </Select>
+  1622→            </div>
+  1623→            <div className="space-y-2">
+  1624→              <Label>Brand</Label>
+  1625→              <Select value={productForm.brandId} onValueChange={(v) => setProductForm(prev => ({ ...prev, brandId: v }))}>
+  1626→                <SelectTrigger>
+  1627→                  <SelectValue placeholder="Select brand (optional)" />
+  1628→                </SelectTrigger>
+  1629→                <SelectContent>
+  1630→                  {brands.map(b => (
+  1631→                    <SelectItem key={b.id} value={b.id}>{b.name}</SelectItem>
+  1632→                  ))}
+  1633→                </SelectContent>
+  1634→              </Select>
+  1635→            </div>
+  1636→            <div className="space-y-2">
+  1637→              <Label>Price *</Label>
+  1638→              <Input
+  1639→                type="number"
+  1640→                value={productForm.price}
+  1641→                onChange={(e) => setProductForm(prev => ({ ...prev, price: e.target.value }))}
+  1642→                placeholder="0.00"
+  1643→              />
+  1644→            </div>
+  1645→            <div className="space-y-2">
+  1646→              <Label>Discount Price</Label>
+  1647→              <Input
+  1648→                type="number"
+  1649→                value={productForm.discountPrice}
+  1650→                onChange={(e) => setProductForm(prev => ({ ...prev, discountPrice: e.target.value }))}
+  1651→                placeholder="Leave empty for no discount"
+  1652→              />
+  1653→            </div>
+  1654→            <div className="space-y-2">
+  1655→              <Label>Stock</Label>
+  1656→              <Input
+  1657→                type="number"
+  1658→                value={productForm.stock}
+  1659→                onChange={(e) => setProductForm(prev => ({ ...prev, stock: e.target.value }))}
+  1660→                placeholder="0"
+  1661→              />
+  1662→            </div>
+  1663→            <div className="space-y-2">
+  1664→              <Label>Status</Label>
+  1665→              <Select value={productForm.status} onValueChange={(v) => setProductForm(prev => ({ ...prev, status: v }))}>
+  1666→                <SelectTrigger>
+  1667→                  <SelectValue />
+  1668→                </SelectTrigger>
+  1669→                <SelectContent>
+  1670→                  <SelectItem value="active">Active</SelectItem>
+  1671→                  <SelectItem value="draft">Draft</SelectItem>
+  1672→                </SelectContent>
+  1673→              </Select>
+  1674→            </div>
+  1675→            <div className="space-y-2 sm:col-span-2">
+  1676→              <Label>Short Description</Label>
+  1677→              <Input
+  1678→                value={productForm.shortDesc}
+  1679→                onChange={(e) => setProductForm(prev => ({ ...prev, shortDesc: e.target.value }))}
+  1680→                placeholder="Brief product description"
+  1681→              />
+  1682→            </div>
+  1683→            <div className="space-y-2 sm:col-span-2">
+  1684→              <Label>Description</Label>
+  1685→              <Textarea
+  1686→                value={productForm.description}
+  1687→                onChange={(e) => setProductForm(prev => ({ ...prev, description: e.target.value }))}
+  1688→                placeholder="Full product description (supports plain text)"
+  1689→                rows={3}
+  1690→              />
+  1691→            </div>
+  1692→            <div className="sm:col-span-2">
+  1693→              <Label className="mb-2 block">Product Flags</Label>
+  1694→              <div className="flex flex-wrap gap-4">
+  1695→                <label className="flex items-center gap-2 text-sm cursor-pointer">
+  1696→                  <Checkbox
+  1697→                    checked={productForm.isFeatured}
+  1698→                    onCheckedChange={(checked) => setProductForm(prev => ({ ...prev, isFeatured: !!checked }))}
+  1699→                  />
+  1700→                  Featured
+  1701→                </label>
+  1702→                <label className="flex items-center gap-2 text-sm cursor-pointer">
+  1703→                  <Checkbox
+  1704→                    checked={productForm.isTrending}
+  1705→                    onCheckedChange={(checked) => setProductForm(prev => ({ ...prev, isTrending: !!checked }))}
+  1706→                  />
+  1707→                  Trending
+  1708→                </label>
+  1709→                <label className="flex items-center gap-2 text-sm cursor-pointer">
+  1710→                  <Checkbox
+  1711→                    checked={productForm.isBestSeller}
+  1712→                    onCheckedChange={(checked) => setProductForm(prev => ({ ...prev, isBestSeller: !!checked }))}
+  1713→                  />
+  1714→                  Best Seller
+  1715→                </label>
+  1716→                <label className="flex items-center gap-2 text-sm cursor-pointer">
+  1717→                  <Checkbox
+  1718→                    checked={productForm.isNewArrival}
+  1719→                    onCheckedChange={(checked) => setProductForm(prev => ({ ...prev, isNewArrival: !!checked }))}
+  1720→                  />
+  1721→                  New Arrival
+  1722→                </label>
+  1723→              </div>
+  1724→            </div>
+  1725→          </div>
+  1726→
+  1727→          <DialogFooter>
+  1728→            <Button variant="outline" onClick={() => setProductDialogOpen(false)}>Cancel</Button>
+  1729→            <Button
+  1730→              onClick={handleSaveProduct}
+  1731→              disabled={productSaving || !productForm.name || !productForm.slug || !productForm.categoryId || !productForm.price}
+  1732→              className="gap-2"
+  1733→            >
+  1734→              {productSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+  1735→              {editingProductId ? 'Update Product' : 'Create Product'}
+  1736→            </Button>
+  1737→          </DialogFooter>
+  1738→        </DialogContent>
+  1739→      </Dialog>
+  1740→    </>
+  1741→  );
+  1742→}

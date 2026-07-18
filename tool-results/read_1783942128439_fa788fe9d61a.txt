@@ -1,0 +1,595 @@
+     1→     1→'use client';
+     2→     2→import { useState } from 'react';
+     3→     3→import { useAuthStore } from '@/store/use-auth';
+     4→     4→import { useUIStore } from '@/store/use-ui';
+     5→     5→import { Button } from '@/components/ui/button';
+     6→     6→import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
+     7→     7→import { Input } from '@/components/ui/input';
+     8→     8→import { Label } from '@/components/ui/label';
+     9→     9→import { Separator } from '@/components/ui/separator';
+    10→    10→import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+    11→    11→import { Eye, EyeOff, Mail, Lock, User, Phone, ArrowLeft, CheckCircle2 } from 'lucide-react';
+    12→    12→import { toast } from 'sonner';
+    13→    13→
+    14→    14→function getPasswordStrength(password: string): { score: number; label: string; color: string } {
+    15→    15→  let score = 0;
+    16→    16→  if (password.length >= 6) score++;
+    17→    17→  if (password.length >= 8) score++;
+    18→    18→  if (/[A-Z]/.test(password)) score++;
+    19→    19→  if (/[0-9]/.test(password)) score++;
+    20→    20→  if (/[^A-Za-z0-9]/.test(password)) score++;
+    21→    21→
+    22→    22→  if (score <= 1) return { score: 20, label: 'Weak', color: 'bg-red-500' };
+    23→    23→  if (score === 2) return { score: 40, label: 'Fair', color: 'bg-orange-500' };
+    24→    24→  if (score === 3) return { score: 60, label: 'Good', color: 'bg-yellow-500' };
+    25→    25→  if (score === 4) return { score: 80, label: 'Strong', color: 'bg-emerald-500' };
+    26→    26→  return { score: 100, label: 'Very Strong', color: 'bg-emerald-600' };
+    27→    27→}
+    28→    28→
+    29→    29→// ============================
+    30→    30→// LoginPage
+    31→    31→// ============================
+    32→    32→export function LoginPage() {
+    33→    33→  const { login } = useAuthStore();
+    34→    34→  const { navigate } = useUIStore();
+    35→    35→  const [email, setEmail] = useState('');
+    36→    36→  const [password, setPassword] = useState('');
+    37→    37→  const [showPassword, setShowPassword] = useState(false);
+    38→    38→  const [rememberMe, setRememberMe] = useState(false);
+    39→    39→  const [loading, setLoading] = useState(false);
+    40→    40→  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+    41→    41→
+    42→    42→  const validate = () => {
+    43→    43→    const newErrors: { email?: string; password?: string } = {};
+    44→    44→    if (!email.trim()) newErrors.email = 'Email is required';
+    45→    45→    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) newErrors.email = 'Enter a valid email address';
+    46→    46→    if (!password) newErrors.password = 'Password is required';
+    47→    47→    else if (password.length < 6) newErrors.password = 'Password must be at least 6 characters';
+    48→    48→    setErrors(newErrors);
+    49→    49→    return Object.keys(newErrors).length === 0;
+    50→    50→  };
+    51→    51→
+    52→    52→  const handleLogin = async (e: React.FormEvent) => {
+    53→    53→    e.preventDefault();
+    54→    54→    if (!validate()) return;
+    55→    55→    setLoading(true);
+    56→    56→    try {
+    57→    57→      const res = await fetch('/api/auth', {
+    58→    58→        method: 'POST',
+    59→    59→        headers: { 'Content-Type': 'application/json' },
+    60→    60→        body: JSON.stringify({ action: 'login', email, password, rememberMe }),
+    61→    61→      });
+    62→    62→      if (res.ok) {
+    63→    63→        const data = await res.json();
+    64→    64→        login(data.user);
+    65→    65→        toast.success('Login successful! Welcome back.');
+    66→    66→        navigate('home');
+    67→    67→      } else {
+    68→    68→        const err = await res.json();
+    69→    69→        toast.error(err.error || 'Invalid email or password');
+    70→    70→      }
+    71→    71→    } catch {
+    72→    72→      toast.error('Login failed. Please try again.');
+    73→    73→    } finally {
+    74→    74→      setLoading(false);
+    75→    75→    }
+    76→    76→  };
+    77→    77→
+    78→    78→  return (
+    79→    79→    <div className="min-h-[70vh] flex items-center justify-center px-4 py-8">
+    80→    80→      <Card className="w-full max-w-md">
+    81→    81→        <CardHeader className="text-center pb-2">
+    82→    82→          <CardTitle className="text-2xl font-bold">Welcome Back</CardTitle>
+    83→    83→          <CardDescription>Sign in to your NextShop account</CardDescription>
+    84→    84→        </CardHeader>
+    85→    85→        <CardContent className="pt-4">
+    86→    86→          <form onSubmit={handleLogin} className="space-y-4">
+    87→    87→            {/* Email */}
+    88→    88→            <div className="space-y-2">
+    89→    89→              <Label htmlFor="login-email">Email</Label>
+    90→    90→              <div className="relative">
+    91→    91→                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+    92→    92→                <Input
+    93→    93→                  id="login-email"
+    94→    94→                  type="email"
+    95→    95→                  placeholder="you@example.com"
+    96→    96→                  value={email}
+    97→    97→                  onChange={(e) => { setEmail(e.target.value); setErrors({ ...errors, email: undefined }); }}
+    98→    98→                  className={`pl-9 ${errors.email ? 'border-red-500' : ''}`}
+    99→    99→                />
+   100→   100→              </div>
+   101→   101→              {errors.email && <p className="text-xs text-red-500">{errors.email}</p>}
+   102→   102→            </div>
+   103→   103→
+   104→   104→            {/* Password */}
+   105→   105→            <div className="space-y-2">
+   106→   106→              <Label htmlFor="login-password">Password</Label>
+   107→   107→              <div className="relative">
+   108→   108→                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   109→   109→                <Input
+   110→   110→                  id="login-password"
+   111→   111→                  type={showPassword ? 'text' : 'password'}
+   112→   112→                  placeholder="Enter your password"
+   113→   113→                  value={password}
+   114→   114→                  onChange={(e) => { setPassword(e.target.value); setErrors({ ...errors, password: undefined }); }}
+   115→   115→                  className={`pl-9 pr-9 ${errors.password ? 'border-red-500' : ''}`}
+   116→   116→                />
+   117→   117→                <button
+   118→   118→                  type="button"
+   119→   119→                  onClick={() => setShowPassword(!showPassword)}
+   120→   120→                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+   121→   121→                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+   122→   122→                >
+   123→   123→                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+   124→   124→                </button>
+   125→   125→              </div>
+   126→   126→              {errors.password && <p className="text-xs text-red-500">{errors.password}</p>}
+   127→   127→            </div>
+   128→   128→
+   129→   129→            {/* Remember Me & Forgot Password */}
+   130→   130→            <div className="flex items-center justify-between">
+   131→   131→              <label className="flex items-center gap-2 cursor-pointer">
+   132→   132→                <input
+   133→   133→                  type="checkbox"
+   134→   134→                  checked={rememberMe}
+   135→   135→                  onChange={(e) => setRememberMe(e.target.checked)}
+   136→   136→                  className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 h-4 w-4"
+   137→   137→                />
+   138→   138→                <span className="text-sm text-muted-foreground">Remember me</span>
+   139→   139→              </label>
+   140→   140→              <button
+   141→   141→                type="button"
+   142→   142→                onClick={() => navigate('forgot-password')}
+   143→   143→                className="text-sm text-emerald-600 hover:text-emerald-700 font-medium transition-colors"
+   144→   144→              >
+   145→   145→                Forgot Password?
+   146→   146→              </button>
+   147→   147→            </div>
+   148→   148→
+   149→   149→            {/* Login Button */}
+   150→   150→            <Button
+   151→   151→              type="submit"
+   152→   152→              disabled={loading}
+   153→   153→              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white h-11"
+   154→   154→            >
+   155→   155→              {loading ? (
+   156→   156→                <>
+   157→   157→                  <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+   158→   158→                  Signing in...
+   159→   159→                </>
+   160→   160→              ) : (
+   161→   161→                'Login'
+   162→   162→              )}
+   163→   163→            </Button>
+   164→   164→          </form>
+   165→   165→
+   166→   166→          {/* Social Login */}
+   167→   167→          <div className="mt-6">
+   168→   168→            <div className="relative">
+   169→   169→              <Separator />
+   170→   170→              <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card px-2 text-xs text-muted-foreground">
+   171→   171→                or continue with
+   172→   172→              </span>
+   173→   173→            </div>
+   174→   174→            <div className="grid grid-cols-2 gap-3 mt-4">
+   175→   175→              <Button variant="outline" className="w-full h-10" type="button">
+   176→   176→                <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
+   177→   177→                  <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
+   178→   178→                  <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+   179→   179→                  <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+   180→   180→                  <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+   181→   181→                </svg>
+   182→   182→                Google
+   183→   183→              </Button>
+   184→   184→              <Button variant="outline" className="w-full h-10" type="button">
+   185→   185→                <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24" fill="#1877F2">
+   186→   186→                  <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+   187→   187→                </svg>
+   188→   188→                Facebook
+   189→   189→              </Button>
+   190→   190→            </div>
+   191→   191→          </div>
+   192→   192→        </CardContent>
+   193→   193→
+   194→   194→        <CardFooter className="justify-center pb-6">
+   195→   195→          <p className="text-sm text-muted-foreground">
+   196→   196→            Don&apos;t have an account?{' '}
+   197→   197→            <button
+   198→   198→              onClick={() => navigate('register')}
+   199→   199→              className="text-emerald-600 hover:text-emerald-700 font-medium transition-colors"
+   200→   200→            >
+   201→   201→              Register
+   202→   202→            </button>
+   203→   203→          </p>
+   204→   204→        </CardFooter>
+   205→   205→      </Card>
+   206→   206→    </div>
+   207→   207→  );
+   208→   208→}
+   209→   209→
+   210→   210→// ============================
+   211→   211→// RegisterPage
+   212→   212→// ============================
+   213→   213→export function RegisterPage() {
+   214→   214→  const { login } = useAuthStore();
+   215→   215→  const { navigate } = useUIStore();
+   216→   216→  const [fullName, setFullName] = useState('');
+   217→   217→  const [email, setEmail] = useState('');
+   218→   218→  const [phone, setPhone] = useState('');
+   219→   219→  const [password, setPassword] = useState('');
+   220→   220→  const [confirmPassword, setConfirmPassword] = useState('');
+   221→   221→  const [showPassword, setShowPassword] = useState(false);
+   222→   222→  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+   223→   223→  const [agreeTerms, setAgreeTerms] = useState(false);
+   224→   224→  const [loading, setLoading] = useState(false);
+   225→   225→  const [errors, setErrors] = useState<Record<string, string>>({});
+   226→   226→
+   227→   227→  const strength = getPasswordStrength(password);
+   228→   228→
+   229→   229→  const validate = () => {
+   230→   230→    const newErrors: Record<string, string> = {};
+   231→   231→    if (!fullName.trim()) newErrors.fullName = 'Full name is required';
+   232→   232→    if (!email.trim()) newErrors.email = 'Email is required';
+   233→   233→    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) newErrors.email = 'Enter a valid email address';
+   234→   234→    if (!phone.trim()) newErrors.phone = 'Phone number is required';
+   235→   235→    else if (!/^(?:\+880|01)\d{9,10}$/.test(phone.trim())) newErrors.phone = 'Enter a valid BD phone number';
+   236→   236→    if (!password) newErrors.password = 'Password is required';
+   237→   237→    else if (password.length < 6) newErrors.password = 'Password must be at least 6 characters';
+   238→   238→    if (password !== confirmPassword) newErrors.confirmPassword = 'Passwords do not match';
+   239→   239→    if (!agreeTerms) newErrors.terms = 'You must agree to the terms';
+   240→   240→    setErrors(newErrors);
+   241→   241→    return Object.keys(newErrors).length === 0;
+   242→   242→  };
+   243→   243→
+   244→   244→  const handleRegister = async (e: React.FormEvent) => {
+   245→   245→    e.preventDefault();
+   246→   246→    if (!validate()) return;
+   247→   247→    setLoading(true);
+   248→   248→    try {
+   249→   249→      const res = await fetch('/api/auth', {
+   250→   250→        method: 'POST',
+   251→   251→        headers: { 'Content-Type': 'application/json' },
+   252→   252→        body: JSON.stringify({ action: 'register', name: fullName, email, phone, password }),
+   253→   253→      });
+   254→   254→      if (res.ok) {
+   255→   255→        const data = await res.json();
+   256→   256→        login(data.user);
+   257→   257→        toast.success('Registration successful! Welcome to NextShop.');
+   258→   258→        navigate('home');
+   259→   259→      } else {
+   260→   260→        const err = await res.json();
+   261→   261→        toast.error(err.error || 'Registration failed. Please try again.');
+   262→   262→      }
+   263→   263→    } catch {
+   264→   264→      toast.error('Registration failed. Please try again.');
+   265→   265→    } finally {
+   266→   266→      setLoading(false);
+   267→   267→    }
+   268→   268→  };
+   269→   269→
+   270→   270→  return (
+   271→   271→    <div className="min-h-[70vh] flex items-center justify-center px-4 py-8">
+   272→   272→      <Card className="w-full max-w-md">
+   273→   273→        <CardHeader className="text-center pb-2">
+   274→   274→          <CardTitle className="text-2xl font-bold">Create Account</CardTitle>
+   275→   275→          <CardDescription>Join NextShop and start shopping</CardDescription>
+   276→   276→        </CardHeader>
+   277→   277→        <CardContent className="pt-4">
+   278→   278→          <form onSubmit={handleRegister} className="space-y-4">
+   279→   279→            {/* Full Name */}
+   280→   280→            <div className="space-y-2">
+   281→   281→              <Label htmlFor="reg-name">Full Name</Label>
+   282→   282→              <div className="relative">
+   283→   283→                <User className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   284→   284→                <Input
+   285→   285→                  id="reg-name"
+   286→   286→                  placeholder="John Doe"
+   287→   287→                  value={fullName}
+   288→   288→                  onChange={(e) => { setFullName(e.target.value); setErrors({ ...errors, fullName: undefined }); }}
+   289→   289→                  className={`pl-9 ${errors.fullName ? 'border-red-500' : ''}`}
+   290→   290→                />
+   291→   291→              </div>
+   292→   292→              {errors.fullName && <p className="text-xs text-red-500">{errors.fullName}</p>}
+   293→   293→            </div>
+   294→   294→
+   295→   295→            {/* Email */}
+   296→   296→            <div className="space-y-2">
+   297→   297→              <Label htmlFor="reg-email">Email</Label>
+   298→   298→              <div className="relative">
+   299→   299→                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   300→   300→                <Input
+   301→   301→                  id="reg-email"
+   302→   302→                  type="email"
+   303→   303→                  placeholder="you@example.com"
+   304→   304→                  value={email}
+   305→   305→                  onChange={(e) => { setEmail(e.target.value); setErrors({ ...errors, email: undefined }); }}
+   306→   306→                  className={`pl-9 ${errors.email ? 'border-red-500' : ''}`}
+   307→   307→                />
+   308→   308→              </div>
+   309→   309→              {errors.email && <p className="text-xs text-red-500">{errors.email}</p>}
+   310→   310→            </div>
+   311→   311→
+   312→   312→            {/* Phone */}
+   313→   313→            <div className="space-y-2">
+   314→   314→              <Label htmlFor="reg-phone">Phone Number</Label>
+   315→   315→              <div className="relative">
+   316→   316→                <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   317→   317→                <Input
+   318→   318→                  id="reg-phone"
+   319→   319→                  placeholder="01XXXXXXXXX"
+   320→   320→                  value={phone}
+   321→   321→                  onChange={(e) => { setPhone(e.target.value); setErrors({ ...errors, phone: undefined }); }}
+   322→   322→                  className={`pl-9 ${errors.phone ? 'border-red-500' : ''}`}
+   323→   323→                />
+   324→   324→              </div>
+   325→   325→              {errors.phone && <p className="text-xs text-red-500">{errors.phone}</p>}
+   326→   326→            </div>
+   327→   327→
+   328→   328→            {/* Password */}
+   329→   329→            <div className="space-y-2">
+   330→   330→              <Label htmlFor="reg-password">Password</Label>
+   331→   331→              <div className="relative">
+   332→   332→                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   333→   333→                <Input
+   334→   334→                  id="reg-password"
+   335→   335→                  type={showPassword ? 'text' : 'password'}
+   336→   336→                  placeholder="Create a password"
+   337→   337→                  value={password}
+   338→   338→                  onChange={(e) => { setPassword(e.target.value); setErrors({ ...errors, password: undefined }); }}
+   339→   339→                  className={`pl-9 pr-9 ${errors.password ? 'border-red-500' : ''}`}
+   340→   340→                />
+   341→   341→                <button
+   342→   342→                  type="button"
+   343→   343→                  onClick={() => setShowPassword(!showPassword)}
+   344→   344→                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+   345→   345→                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+   346→   346→                >
+   347→   347→                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+   348→   348→                </button>
+   349→   349→              </div>
+   350→   350→              {errors.password && <p className="text-xs text-red-500">{errors.password}</p>}
+   351→   351→              {/* Password Strength */}
+   352→   352→              {password.length > 0 && (
+   353→   353→                <div className="space-y-1">
+   354→   354→                  <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+   355→   355→                    <div
+   356→   356→                      className={`h-full rounded-full transition-all duration-300 ${strength.color}`}
+   357→   357→                      style={{ width: `${strength.score}%` }}
+   358→   358→                    />
+   359→   359→                  </div>
+   360→   360→                  <p className="text-xs text-muted-foreground">
+   361→   361→                    Password strength: <span className="font-medium">{strength.label}</span>
+   362→   362→                  </p>
+   363→   363→                </div>
+   364→   364→              )}
+   365→   365→            </div>
+   366→   366→
+   367→   367→            {/* Confirm Password */}
+   368→   368→            <div className="space-y-2">
+   369→   369→              <Label htmlFor="reg-confirm-password">Confirm Password</Label>
+   370→   370→              <div className="relative">
+   371→   371→                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   372→   372→                <Input
+   373→   373→                  id="reg-confirm-password"
+   374→   374→                  type={showConfirmPassword ? 'text' : 'password'}
+   375→   375→                  placeholder="Confirm your password"
+   376→   376→                  value={confirmPassword}
+   377→   377→                  onChange={(e) => { setConfirmPassword(e.target.value); setErrors({ ...errors, confirmPassword: undefined }); }}
+   378→   378→                  className={`pl-9 pr-9 ${errors.confirmPassword ? 'border-red-500' : ''}`}
+   379→   379→                />
+   380→   380→                <button
+   381→   381→                  type="button"
+   382→   382→                  onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+   383→   383→                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+   384→   384→                  aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+   385→   385→                >
+   386→   386→                  {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+   387→   387→                </button>
+   388→   388→              </div>
+   389→   389→              {errors.confirmPassword && <p className="text-xs text-red-500">{errors.confirmPassword}</p>}
+   390→   390→            </div>
+   391→   391→
+   392→   392→            {/* Terms */}
+   393→   393→            <div className="flex items-start gap-2">
+   394→   394→              <input
+   395→   395→                type="checkbox"
+   396→   396→                checked={agreeTerms}
+   397→   397→                onChange={(e) => { setAgreeTerms(e.target.checked); setErrors({ ...errors, terms: undefined }); }}
+   398→   398→                className="rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 h-4 w-4 mt-0.5"
+   399→   399→              />
+   400→   400→              <Label className="text-sm text-muted-foreground leading-relaxed cursor-pointer">
+   401→   401→                I agree to the{' '}
+   402→   402→                <span className="text-emerald-600 font-medium">Terms of Service</span> and{' '}
+   403→   403→                <span className="text-emerald-600 font-medium">Privacy Policy</span>
+   404→   404→              </Label>
+   405→   405→            </div>
+   406→   406→            {errors.terms && <p className="text-xs text-red-500">{errors.terms}</p>}
+   407→   407→
+   408→   408→            {/* Register Button */}
+   409→   409→            <Button
+   410→   410→              type="submit"
+   411→   411→              disabled={loading}
+   412→   412→              className="w-full bg-emerald-600 hover:bg-emerald-700 text-white h-11"
+   413→   413→            >
+   414→   414→              {loading ? (
+   415→   415→                <>
+   416→   416→                  <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+   417→   417→                  Creating Account...
+   418→   418→                </>
+   419→   419→              ) : (
+   420→   420→                'Create Account'
+   421→   421→              )}
+   422→   422→            </Button>
+   423→   423→          </form>
+   424→   424→
+   425→   425→          {/* Social Register */}
+   426→   426→          <div className="mt-6">
+   427→   427→            <div className="relative">
+   428→   428→              <Separator />
+   429→   429→              <span className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-card px-2 text-xs text-muted-foreground">
+   430→   430→                or sign up with
+   431→   431→              </span>
+   432→   432→            </div>
+   433→   433→            <div className="grid grid-cols-2 gap-3 mt-4">
+   434→   434→              <Button variant="outline" className="w-full h-10" type="button">
+   435→   435→                <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24">
+   436→   436→                  <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4"/>
+   437→   437→                  <path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/>
+   438→   438→                  <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
+   439→   439→                  <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
+   440→   440→                </svg>
+   441→   441→                Google
+   442→   442→              </Button>
+   443→   443→              <Button variant="outline" className="w-full h-10" type="button">
+   444→   444→                <svg className="mr-2 h-4 w-4" viewBox="0 0 24 24" fill="#1877F2">
+   445→   445→                  <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+   446→   446→                </svg>
+   447→   447→                Facebook
+   448→   448→              </Button>
+   449→   449→            </div>
+   450→   450→          </div>
+   451→   451→        </CardContent>
+   452→   452→
+   453→   453→        <CardFooter className="justify-center pb-6">
+   454→   454→          <p className="text-sm text-muted-foreground">
+   455→   455→            Already have an account?{' '}
+   456→   456→            <button
+   457→   457→              onClick={() => navigate('login')}
+   458→   458→              className="text-emerald-600 hover:text-emerald-700 font-medium transition-colors"
+   459→   459→            >
+   460→   460→              Login
+   461→   461→            </button>
+   462→   462→          </p>
+   463→   463→        </CardFooter>
+   464→   464→      </Card>
+   465→   465→    </div>
+   466→   466→  );
+   467→   467→}
+   468→   468→
+   469→   469→// ============================
+   470→   470→// ForgotPasswordPage
+   471→   471→// ============================
+   472→   472→export function ForgotPasswordPage() {
+   473→   473→  const { navigate } = useUIStore();
+   474→   474→  const [email, setEmail] = useState('');
+   475→   475→  const [loading, setLoading] = useState(false);
+   476→   476→  const [sent, setSent] = useState(false);
+   477→   477→  const [error, setError] = useState('');
+   478→   478→
+   479→   479→  const handleSubmit = async (e: React.FormEvent) => {
+   480→   480→    e.preventDefault();
+   481→   481→    if (!email.trim()) {
+   482→   482→      setError('Email is required');
+   483→   483→      return;
+   484→   484→    }
+   485→   485→    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+   486→   486→      setError('Enter a valid email address');
+   487→   487→      return;
+   488→   488→    }
+   489→   489→    setError('');
+   490→   490→    setLoading(true);
+   491→   491→    try {
+   492→   492→      const res = await fetch('/api/auth', {
+   493→   493→        method: 'POST',
+   494→   494→        headers: { 'Content-Type': 'application/json' },
+   495→   495→        body: JSON.stringify({ action: 'forgot-password', email }),
+   496→   496→      });
+   497→   497→      if (res.ok) {
+   498→   498→        setSent(true);
+   499→   499→        toast.success('Reset link sent! Check your email.');
+   500→   500→      } else {
+   501→   501→        const err = await res.json();
+   502→   502→        toast.error(err.error || 'Failed to send reset link');
+   503→   503→      }
+   504→   504→    } catch {
+   505→   505→      toast.error('Something went wrong. Please try again.');
+   506→   506→    } finally {
+   507→   507→      setLoading(false);
+   508→   508→    }
+   509→   509→  };
+   510→   510→
+   511→   511→  return (
+   512→   512→    <div className="min-h-[70vh] flex items-center justify-center px-4 py-8">
+   513→   513→      <Card className="w-full max-w-md">
+   514→   514→        <CardHeader className="text-center pb-2">
+   515→   515→          <CardTitle className="text-2xl font-bold">Forgot Password</CardTitle>
+   516→   516→          <CardDescription>Enter your email to receive a reset link</CardDescription>
+   517→   517→        </CardHeader>
+   518→   518→        <CardContent className="pt-4">
+   519→   519→          {sent ? (
+   520→   520→            <div className="text-center space-y-4 py-4">
+   521→   521→              <div className="w-16 h-16 rounded-full bg-emerald-100 flex items-center justify-center mx-auto">
+   522→   522→                <CheckCircle2 className="h-8 w-8 text-emerald-600" />
+   523→   523→              </div>
+   524→   524→              <div>
+   525→   525→                <h3 className="text-lg font-semibold text-foreground">Check Your Email</h3>
+   526→   526→                <p className="text-sm text-muted-foreground mt-1">
+   527→   527→                  We&apos;ve sent a password reset link to <span className="font-medium text-foreground">{email}</span>.
+   528→   528→                  Please check your inbox and follow the instructions.
+   529→   529→                </p>
+   530→   530→              </div>
+   531→   531→              <Button
+   532→   532→                variant="outline"
+   533→   533→                onClick={() => navigate('login')}
+   534→   534→                className="mt-2"
+   535→   535→              >
+   536→   536→                <ArrowLeft className="mr-2 h-4 w-4" />
+   537→   537→                Back to Login
+   538→   538→              </Button>
+   539→   539→            </div>
+   540→   540→          ) : (
+   541→   541→            <form onSubmit={handleSubmit} className="space-y-4">
+   542→   542→              <div className="text-center mb-2">
+   543→   543→                <p className="text-sm text-muted-foreground">
+   544→   544→                  Enter the email address associated with your account and we&apos;ll send you a link to reset your password.
+   545→   545→                </p>
+   546→   546→              </div>
+   547→   547→
+   548→   548→              <div className="space-y-2">
+   549→   549→                <Label htmlFor="forgot-email">Email Address</Label>
+   550→   550→                <div className="relative">
+   551→   551→                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   552→   552→                  <Input
+   553→   553→                    id="forgot-email"
+   554→   554→                    type="email"
+   555→   555→                    placeholder="you@example.com"
+   556→   556→                    value={email}
+   557→   557→                    onChange={(e) => { setEmail(e.target.value); setError(''); }}
+   558→   558→                    className={`pl-9 ${error ? 'border-red-500' : ''}`}
+   559→   559→                  />
+   560→   560→                </div>
+   561→   561→                {error && <p className="text-xs text-red-500">{error}</p>}
+   562→   562→              </div>
+   563→   563→
+   564→   564→              <Button
+   565→   565→                type="submit"
+   566→   566→                disabled={loading}
+   567→   567→                className="w-full bg-emerald-600 hover:bg-emerald-700 text-white h-11"
+   568→   568→              >
+   569→   569→                {loading ? (
+   570→   570→                  <>
+   571→   571→                    <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+   572→   572→                    Sending...
+   573→   573→                  </>
+   574→   574→                ) : (
+   575→   575→                  'Send Reset Link'
+   576→   576→                )}
+   577→   577→              </Button>
+   578→   578→
+   579→   579→              <div className="text-center pt-2">
+   580→   580→                <button
+   581→   581→                  type="button"
+   582→   582→                  onClick={() => navigate('login')}
+   583→   583→                  className="text-sm text-emerald-600 hover:text-emerald-700 font-medium transition-colors inline-flex items-center gap-1"
+   584→   584→                >
+   585→   585→                  <ArrowLeft className="h-3.5 w-3.5" />
+   586→   586→                  Back to Login
+   587→   587→                </button>
+   588→   588→              </div>
+   589→   589→            </form>
+   590→   590→          )}
+   591→   591→        </CardContent>
+   592→   592→      </Card>
+   593→   593→    </div>
+   594→   594→  );
+   595→   595→}

@@ -1,0 +1,931 @@
+     1→     1→'use client';
+     2→     2→import { useEffect, useState } from 'react';
+     3→     3→import { useUIStore } from '@/store/use-ui';
+     4→     4→import { useAuthStore } from '@/store/use-auth';
+     5→     5→import { useWishlistStore } from '@/store/use-wishlist';
+     6→     6→import { useCartStore } from '@/store/use-cart';
+     7→     7→import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+     8→     8→import { Input } from '@/components/ui/input';
+     9→     9→import { Label } from '@/components/ui/label';
+    10→    10→import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+    11→    11→import { Separator } from '@/components/ui/separator';
+    12→    12→import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+    13→    13→import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, DialogFooter, DialogClose } from '@/components/ui/dialog';
+    14→    14→import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbSeparator } from '@/components/ui/breadcrumb';
+    15→    15→import { ScrollArea } from '@/components/ui/scroll-area';
+    16→    16→import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+    17→    17→import {
+    18→    18→  User, Package, Heart, MapPin, Settings, Bell, LogOut, ChevronRight,
+    19→    19→  Eye, Camera, Plus, Trash2, Star, Clock, CheckCircle2,
+    20→    20→  XCircle, Truck, ShoppingBag, Menu, Loader2
+    21→    21→} from 'lucide-react';
+    22→    22→import type { Order, Address, Notification as AppNotification } from '@/types';
+    23→    23→
+    24→    24→// ─── Status helpers ───
+    25→    25→const orderStatusConfig: Record<string, { label: string; color: string; icon: React.ReactNode }> = {
+    26→    26→  pending: { label: 'Pending', color: 'bg-muted text-foreground border-border', icon: <Clock className="h-3.5 w-3.5" /> },
+    27→    27→  confirmed: { label: 'Confirmed', color: 'bg-muted text-foreground border-border', icon: <CheckCircle2 className="h-3.5 w-3.5" /> },
+    28→    28→  processing: { label: 'Processing', color: 'bg-muted text-foreground border-border', icon: <Package className="h-3.5 w-3.5" /> },
+    29→    29→  shipped: { label: 'Shipped', color: 'bg-muted text-foreground border-border', icon: <Truck className="h-3.5 w-3.5" /> },
+    30→    30→  delivered: { label: 'Delivered', color: 'bg-muted text-foreground border-border', icon: <CheckCircle2 className="h-3.5 w-3.5" /> },
+    31→    31→  cancelled: { label: 'Cancelled', color: 'bg-destructive/10 text-destructive border-destructive/20', icon: <XCircle className="h-3.5 w-3.5" /> },
+    32→    32→};
+    33→    33→
+    34→    34→const notificationIcons: Record<string, React.ReactNode> = {
+    35→    35→  order: <Package className="h-5 w-5 text-muted-foreground" />,
+    36→    36→  promo: <Star className="h-5 w-5 text-muted-foreground" />,
+    37→    37→  system: <Bell className="h-5 w-5 text-muted-foreground" />,
+    38→    38→  shipping: <Truck className="h-5 w-5 text-muted-foreground" />,
+    39→    39→};
+    40→    40→
+    41→    41→type Tab = 'profile' | 'orders' | 'wishlist' | 'addresses' | 'notifications' | 'settings';
+    42→    42→
+    43→    43→const sidebarItems: { id: Tab; label: string; icon: React.ReactNode }[] = [
+    44→    44→  { id: 'profile', label: 'Profile', icon: <User className="h-4 w-4" /> },
+    45→    45→  { id: 'orders', label: 'Orders', icon: <Package className="h-4 w-4" /> },
+    46→    46→  { id: 'wishlist', label: 'Wishlist', icon: <Heart className="h-4 w-4" /> },
+    47→    47→  { id: 'addresses', label: 'Addresses', icon: <MapPin className="h-4 w-4" /> },
+    48→    48→  { id: 'notifications', label: 'Notifications', icon: <Bell className="h-4 w-4" /> },
+    49→    49→  { id: 'settings', label: 'Settings', icon: <Settings className="h-4 w-4" /> },
+    50→    50→];
+    51→    51→
+    52→    52→// ─── Custom scrollbar styles ───
+    53→    53→const scrollbarStyles = `
+    54→    54→  .dashboard-scroll::-webkit-scrollbar { width: 6px; }
+    55→    55→  .dashboard-scroll::-webkit-scrollbar-track { background: transparent; }
+    56→    56→  .dashboard-scroll::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+    57→    57→  .dashboard-scroll::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+    58→    58→`;
+    59→    59→
+    60→    60→export default function CustomerDashboard() {
+    61→    61→  const { user, isAuthenticated, logout, updateUser } = useAuthStore();
+    62→    62→  const { navigate, orders, setOrders, addresses, setAddresses, notifications, setNotifications, viewOrder } = useUIStore();
+    63→    63→  const wishlistItems = useWishlistStore((s) => s.items);
+    64→    64→  const removeWishlistItem = useWishlistStore((s) => s.removeItem);
+    65→    65→  const addCartItem = useCartStore((s) => s.addItem);
+    66→    66→
+    67→    67→  const [activeTab, setActiveTab] = useState<Tab>('profile');
+    68→    68→  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+    69→    69→  const [loading, setLoading] = useState(true);
+    70→    70→
+    71→    71→  // Profile edit state
+    72→    72→  const [isEditing, setIsEditing] = useState(false);
+    73→    73→  const [editName, setEditName] = useState('');
+    74→    74→  const [editEmail, setEditEmail] = useState('');
+    75→    75→  const [editPhone, setEditPhone] = useState('');
+    76→    76→
+    77→    77→  // Address dialog
+    78→    78→  const [addressDialogOpen, setAddressDialogOpen] = useState(false);
+    79→    79→  const [editingAddress, setEditingAddress] = useState<Address | null>(null);
+    80→    80→  const [addrForm, setAddrForm] = useState({
+    81→    81→    label: '', fullName: '', phone: '', address: '', city: '', state: '', zipCode: '', country: 'Bangladesh',
+    82→    82→  });
+    83→    83→
+    84→    84→  // Settings state
+    85→    85→  const [currentPassword, setCurrentPassword] = useState('');
+    86→    86→  const [newPassword, setNewPassword] = useState('');
+    87→    87→  const [confirmPassword, setConfirmPassword] = useState('');
+    88→    88→  const [deleteConfirmText, setDeleteConfirmText] = useState('');
+    89→    89→
+    90→    90→  // Selected order for detail view
+    91→    91→  const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+    92→    92→
+    93→    93→  useEffect(() => {
+    94→    94→    if (!isAuthenticated || !user) return;
+    95→    95→
+    96→    96→    const fetchData = async () => {
+    97→    97→      setLoading(true);
+    98→    98→      try {
+    99→    99→        const [ordersRes, addressesRes, notifsRes] = await Promise.allSettled([
+   100→   100→          fetch(`/api/orders?userId=${user.id}`).then(r => r.json()),
+   101→   101→          fetch(`/api/addresses?userId=${user.id}`).then(r => r.json()),
+   102→   102→          fetch(`/api/notifications?userId=${user.id}`).then(r => r.json()),
+   103→   103→        ]);
+   104→   104→
+   105→   105→        if (ordersRes.status === 'fulfilled' && ordersRes.value?.orders) {
+   106→   106→          setOrders(ordersRes.value.orders);
+   107→   107→        }
+   108→   108→        if (addressesRes.status === 'fulfilled' && addressesRes.value?.addresses) {
+   109→   109→          setAddresses(addressesRes.value.addresses);
+   110→   110→        }
+   111→   111→        if (notifsRes.status === 'fulfilled' && notifsRes.value?.notifications) {
+   112→   112→          setNotifications(notifsRes.value.notifications);
+   113→   113→        }
+   114→   114→      } catch {
+   115→   115→        // use mock data from store if API fails
+   116→   116→      } finally {
+   117→   117→        setLoading(false);
+   118→   118→      }
+   119→   119→    };
+   120→   120→    fetchData();
+   121→   121→  }, [isAuthenticated, user, setOrders, setAddresses, setNotifications]);
+   122→   122→
+   123→   123→  // Initialize edit form
+   124→   124→  useEffect(() => {
+   125→   125→    if (user) {
+   126→   126→      setEditName(user.name);
+   127→   127→      setEditEmail(user.email);
+   128→   128→      setEditPhone(user.phone ?? '');
+   129→   129→    }
+   130→   130→  }, [user]);
+   131→   131→
+   132→   132→  const handleSaveProfile = () => {
+   133→   133→    updateUser({ name: editName, email: editEmail, phone: editPhone });
+   134→   134→    setIsEditing(false);
+   135→   135→  };
+   136→   136→
+   137→   137→  const handleMarkNotificationRead = (id: string) => {
+   138→   138→    const updated = notifications.map(n =>
+   139→   139→      n.id === id ? { ...n, isRead: true } : n
+   140→   140→    );
+   141→   141→    setNotifications(updated);
+   142→   142→  };
+   143→   143→
+   144→   144→  const handleSaveAddress = () => {
+   145→   145→    if (editingAddress) {
+   146→   146→      const updated = addresses.map(a =>
+   147→   147→        a.id === editingAddress.id
+   148→   148→          ? { ...a, ...addrForm }
+   149→   149→          : a
+   150→   150→      );
+   151→   151→      setAddresses(updated);
+   152→   152→    } else {
+   153→   153→      const newAddr: Address = {
+   154→   154→        id: `addr-${Date.now()}`,
+   155→   155→        userId: user!.id,
+   156→   156→        isDefault: addresses.length === 0,
+   157→   157→        ...addrForm,
+   158→   158→      };
+   159→   159→      setAddresses([...addresses, newAddr]);
+   160→   160→    }
+   161→   161→    setAddressDialogOpen(false);
+   162→   162→    setEditingAddress(null);
+   163→   163→    setAddrForm({ label: '', fullName: '', phone: '', address: '', city: '', state: '', zipCode: '', country: 'Bangladesh' });
+   164→   164→  };
+   165→   165→
+   166→   166→  const handleEditAddress = (addr: Address) => {
+   167→   167→    setEditingAddress(addr);
+   168→   168→    setAddrForm({
+   169→   169→      label: addr.label ?? '',
+   170→   170→      fullName: addr.fullName,
+   171→   171→      phone: addr.phone,
+   172→   172→      address: addr.address,
+   173→   173→      city: addr.city,
+   174→   174→      state: addr.state ?? '',
+   175→   175→      zipCode: addr.zipCode ?? '',
+   176→   176→      country: addr.country,
+   177→   177→    });
+   178→   178→    setAddressDialogOpen(true);
+   179→   179→  };
+   180→   180→
+   181→   181→  const handleDeleteAddress = (id: string) => {
+   182→   182→    setAddresses(addresses.filter(a => a.id !== id));
+   183→   183→  };
+   184→   184→
+   185→   185→  const handleSetDefaultAddress = (id: string) => {
+   186→   186→    setAddresses(addresses.map(a => ({ ...a, isDefault: a.id === id })));
+   187→   187→  };
+   188→   188→
+   189→   189→  // ─── Not authenticated view ───
+   190→   190→  if (!isAuthenticated || !user) {
+   191→   191→    return (
+   192→   192→      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-6 p-4">
+   193→   193→        <div className="h-24 w-24 rounded-full bg-muted flex items-center justify-center">
+   194→   194→          <User className="h-12 w-12 text-muted-foreground" />
+   195→   195→        </div>
+   196→   196→        <h2 className="text-2xl font-semibold tracking-tight">Please login to view your dashboard</h2>
+   197→   197→        <p className="text-muted-foreground text-center max-w-md">
+   198→   198→          You need to be signed in to access your orders, wishlist, and account settings.
+   199→   199→        </p>
+   200→   200→        <button
+   201→   201→          onClick={() => navigate('login')}
+   202→   202→          className="bg-foreground text-background hover:bg-foreground/90 h-11 px-8 rounded-md text-sm font-medium transition-colors inline-flex items-center gap-2"
+   203→   203→        >
+   204→   204→          <LogOut className="h-4 w-4" />
+   205→   205→          Sign In
+   206→   206→        </button>
+   207→   207→      </div>
+   208→   208→    );
+   209→   209→  }
+   210→   210→
+   211→   211→  // ─── Sidebar content (shared between desktop & mobile) ───
+   212→   212→  const SidebarNav = ({ onNavigate }: { onNavigate?: () => void }) => (
+   213→   213→    <nav className="flex flex-col gap-1 p-2">
+   214→   214→      {sidebarItems.map((item) => (
+   215→   215→        <button
+   216→   216→          key={item.id}
+   217→   217→          onClick={() => {
+   218→   218→            setActiveTab(item.id);
+   219→   219→            setSelectedOrder(null);
+   220→   220→            onNavigate?.();
+   221→   221→          }}
+   222→   222→          className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors text-left w-full ${
+   223→   223→            activeTab === item.id && !selectedOrder
+   224→   224→              ? 'bg-accent text-foreground'
+   225→   225→              : 'text-muted-foreground hover:bg-accent/50 hover:text-foreground'
+   226→   226→          }`}
+   227→   227→        >
+   228→   228→          {item.icon}
+   229→   229→          {item.label}
+   230→   230→        </button>
+   231→   231→      ))}
+   232→   232→      <Separator className="my-2" />
+   233→   233→      <button
+   234→   234→        onClick={() => { logout(); onNavigate?.(); }}
+   235→   235→        className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-accent/50 hover:text-foreground transition-colors text-left w-full"
+   236→   236→      >
+   237→   237→        <LogOut className="h-4 w-4" />
+   238→   238→        Sign Out
+   239→   239→      </button>
+   240→   240→    </nav>
+   241→   241→  );
+   242→   242→
+   243→   243→  // ─── Format helpers ───
+   244→   244→  const formatCurrency = (amount: number) => `৳${amount.toLocaleString()}`;
+   245→   245→  const formatDate = (dateStr: string) => new Date(dateStr).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+   246→   246→  const timeAgo = (dateStr: string) => {
+   247→   247→    const diff = Date.now() - new Date(dateStr).getTime();
+   248→   248→    const mins = Math.floor(diff / 60000);
+   249→   249→    if (mins < 60) return `${mins}m ago`;
+   250→   250→    const hrs = Math.floor(mins / 60);
+   251→   251→    if (hrs < 24) return `${hrs}h ago`;
+   252→   252→    const days = Math.floor(hrs / 24);
+   253→   253→    return `${days}d ago`;
+   254→   254→  };
+   255→   255→
+   256→   256→  return (
+   257→   257→    <>
+   258→   258→      <style>{scrollbarStyles}</style>
+   259→   259→      <div className="w-full">
+   260→   260→        {/* Breadcrumb */}
+   261→   261→        <Breadcrumb className="mb-4">
+   262→   262→          <BreadcrumbList>
+   263→   263→            <BreadcrumbItem>
+   264→   264→              <BreadcrumbLink onClick={() => navigate('home')} className="cursor-pointer text-muted-foreground hover:text-foreground transition-colors">Home</BreadcrumbLink>
+   265→   265→            </BreadcrumbItem>
+   266→   266→            <BreadcrumbSeparator />
+   267→   267→            <BreadcrumbItem>
+   268→   268→              <BreadcrumbLink className="text-foreground font-medium">Dashboard</BreadcrumbLink>
+   269→   269→            </BreadcrumbItem>
+   270→   270→          </BreadcrumbList>
+   271→   271→        </Breadcrumb>
+   272→   272→
+   273→   273→        <div className="flex flex-col lg:flex-row gap-6">
+   274→   274→          {/* ─── Desktop Sidebar ─── */}
+   275→   275→          <aside className="hidden lg:block w-64 shrink-0">
+   276→   276→            <div className="border border-border sticky top-6">
+   277→   277→              <div className="p-3">
+   278→   278→                <div className="flex items-center gap-3 p-3 mb-2">
+   279→   279→                  <Avatar className="h-10 w-10">
+   280→   280→                    <AvatarFallback className="bg-muted text-foreground font-semibold">
+   281→   281→                      {user.name.charAt(0).toUpperCase()}
+   282→   282→                    </AvatarFallback>
+   283→   283→                  </Avatar>
+   284→   284→                  <div className="min-w-0">
+   285→   285→                    <p className="font-semibold text-sm truncate">{user.name}</p>
+   286→   286→                    <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+   287→   287→                  </div>
+   288→   288→                </div>
+   289→   289→                <ScrollArea>
+   290→   290→                  <SidebarNav />
+   291→   291→                </ScrollArea>
+   292→   292→              </div>
+   293→   293→            </div>
+   294→   294→          </aside>
+   295→   295→
+   296→   296→          {/* ─── Mobile Sidebar (Sheet) ─── */}
+   297→   297→          <div className="lg:hidden">
+   298→   298→            <Sheet open={isMobileNavOpen} onOpenChange={setIsMobileNavOpen}>
+   299→   299→              <SheetTrigger asChild>
+   300→   300→                <button className="border border-border hover:bg-accent h-9 px-3 rounded-md text-sm inline-flex items-center gap-2 transition-colors mb-4">
+   301→   301→                  <Menu className="h-4 w-4" />
+   302→   302→                  Menu
+   303→   303→                </button>
+   304→   304→              </SheetTrigger>
+   305→   305→              <SheetContent side="left" className="w-64 p-0">
+   306→   306→                <SheetHeader className="p-4 pb-2">
+   307→   307→                  <SheetTitle className="text-left">My Account</SheetTitle>
+   308→   308→                </SheetHeader>
+   309→   309→                <div className="flex items-center gap-3 px-4 py-2">
+   310→   310→                  <Avatar className="h-10 w-10">
+   311→   311→                    <AvatarFallback className="bg-muted text-foreground font-semibold">
+   312→   312→                      {user.name.charAt(0).toUpperCase()}
+   313→   313→                    </AvatarFallback>
+   314→   314→                  </Avatar>
+   315→   315→                  <div className="min-w-0">
+   316→   316→                    <p className="font-semibold text-sm truncate">{user.name}</p>
+   317→   317→                    <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+   318→   318→                  </div>
+   319→   319→                </div>
+   320→   320→                <SidebarNav onNavigate={() => setIsMobileNavOpen(false)} />
+   321→   321→              </SheetContent>
+   322→   322→            </Sheet>
+   323→   323→          </div>
+   324→   324→
+   325→   325→          {/* ─── Main Content ─── */}
+   326→   326→          <main className="flex-1 min-w-0">
+   327→   327→            {loading ? (
+   328→   328→              <div className="flex items-center justify-center py-20">
+   329→   329→                <Loader2 className="h-8 w-8 animate-spin text-foreground" />
+   330→   330→              </div>
+   331→   331→            ) : selectedOrder ? (
+   332→   332→              /* ─── Order Detail View ─── */
+   333→   333→              <div className="border border-border">
+   334→   334→                <div className="p-6">
+   335→   335→                  <div className="flex items-center gap-2 mb-4">
+   336→   336→                    <button variant="ghost" size="sm" onClick={() => setSelectedOrder(null)} className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors">
+   337→   337→                      <ChevronRight className="h-4 w-4 rotate-180" />
+   338→   338→                      Back
+   339→   339→                    </button>
+   340→   340→                  </div>
+   341→   341→                  <h2 className="text-lg font-semibold">Order #{selectedOrder.orderNumber}</h2>
+   342→   342→                  <p className="text-sm text-muted-foreground">{formatDate(selectedOrder.createdAt)}</p>
+   343→   343→                </div>
+   344→   344→                <div className="px-6 pb-6 space-y-6">
+   345→   345→                  {/* Status */}
+   346→   346→                  <div className="flex items-center gap-2">
+   347→   347→                    <span className="text-sm font-medium">Status:</span>
+   348→   348→                    <span className="text-xs gap-1 border px-2 py-0.5 rounded-sm inline-flex items-center font-medium" style={{ backgroundColor: 'var(--muted)', color: 'var(--foreground)', borderColor: 'var(--border)' }}>
+   349→   349→                      {orderStatusConfig[selectedOrder.status]?.icon}
+   350→   350→                      <span className="ml-1">{orderStatusConfig[selectedOrder.status]?.label ?? selectedOrder.status}</span>
+   351→   351→                    </span>
+   352→   352→                  </div>
+   353→   353→
+   354→   354→                  {/* Order Items */}
+   355→   355→                  <div className="space-y-3">
+   356→   356→                    <h3 className="font-semibold text-sm">Items</h3>
+   357→   357→                    <div className="space-y-2">
+   358→   358→                      {selectedOrder.items.map((item) => (
+   359→   359→                        <div key={item.id} className="flex items-center gap-3 p-3 rounded-lg border border-border bg-muted/20">
+   360→   360→                          {item.productImage && (
+   361→   361→                            <img src={item.productImage} alt={item.productName} className="h-14 w-14 rounded-md object-cover bg-muted" />
+   362→   362→                          )}
+   363→   363→                          <div className="flex-1 min-w-0">
+   364→   364→                            <p className="font-medium text-sm truncate">{item.productName}</p>
+   365→   365→                            <p className="text-xs text-muted-foreground">Qty: {item.quantity}{item.variant ? ` · ${item.variant}` : ''}</p>
+   366→   366→                          </div>
+   367→   367→                          <p className="font-semibold text-sm">{formatCurrency(item.total)}</p>
+   368→   368→                        </div>
+   369→   369→                      ))}
+   370→   370→                    </div>
+   371→   371→                  </div>
+   372→   372→
+   373→   373→                  {/* Order Summary */}
+   374→   374→                  <div className="space-y-2 text-sm">
+   375→   375→                    <div className="flex justify-between">
+   376→   376→                      <span className="text-muted-foreground">Subtotal</span>
+   377→   377→                      <span>{formatCurrency(selectedOrder.subtotal)}</span>
+   378→   378→                    </div>
+   379→   379→                    {selectedOrder.discount > 0 && (
+   380→   380→                      <div className="flex justify-between text-muted-foreground">
+   381→   381→                        <span>Discount</span>
+   382→   382→                        <span>-{formatCurrency(selectedOrder.discount)}</span>
+   383→   383→                      </div>
+   384→   384→                    )}
+   385→   385→                    <div className="flex justify-between">
+   386→   386→                      <span className="text-muted-foreground">Shipping</span>
+   387→   387→                      <span>{selectedOrder.shippingCharge === 0 ? 'Free' : formatCurrency(selectedOrder.shippingCharge)}</span>
+   388→   388→                    </div>
+   389→   389→                    {selectedOrder.tax > 0 && (
+   390→   390→                      <div className="flex justify-between">
+   391→   391→                        <span className="text-muted-foreground">Tax</span>
+   392→   392→                        <span>{formatCurrency(selectedOrder.tax)}</span>
+   393→   393→                      </div>
+   394→   394→                    )}
+   395→   395→                    <Separator />
+   396→   396→                    <div className="flex justify-between font-semibold text-base">
+   397→   397→                      <span>Total</span>
+   398→   398→                      <span>{formatCurrency(selectedOrder.total)}</span>
+   399→   399→                    </div>
+   400→   400→                  </div>
+   401→   401→
+   402→   402→                  <Separator />
+   403→   403→                  <div className="grid grid-cols-2 gap-4 text-sm">
+   404→   404→                    <div>
+   405→   405→                      <p className="text-muted-foreground">Payment Method</p>
+   406→   406→                      <p className="font-medium capitalize">{selectedOrder.paymentMethod}</p>
+   407→   407→                    </div>
+   408→   408→                    <div>
+   409→   409→                      <p className="text-muted-foreground">Payment Status</p>
+   410→   410→                      <span className="text-xs border border-border px-2 py-0.5 rounded-sm font-medium bg-muted text-foreground">
+   411→   411→                        {selectedOrder.paymentStatus}
+   412→   412→                      </span>
+   413→   413→                    </div>
+   414→   414→                    {selectedOrder.trackingNumber && (
+   415→   415→                      <div className="col-span-2">
+   416→   416→                        <p className="text-muted-foreground">Tracking Number</p>
+   417→   417→                        <p className="font-medium font-mono">{selectedOrder.trackingNumber}</p>
+   418→   418→                      </div>
+   419→   419→                    )}
+   420→   420→                  </div>
+   421→   421→                </div>
+   422→   422→              </div>
+   423→   423→            ) : (
+   424→   424→              /* ─── Tabbed Content ─── */
+   425→   425→              <>
+   426→   426→                {/* ── Profile Tab ── */}
+   427→   427→                {activeTab === 'profile' && (
+   428→   428→                  <div className="border border-border">
+   429→   429→                    <div className="p-6">
+   430→   430→                      <h2 className="font-semibold">My Profile</h2>
+   431→   431→                      <p className="text-sm text-muted-foreground">Manage your personal information</p>
+   432→   432→                    </div>
+   433→   433→                    <div className="px-6 pb-6 space-y-6">
+   434→   434→                      {/* Avatar Section */}
+   435→   435→                      <div className="flex flex-col items-center gap-4">
+   436→   436→                        <div className="relative group">
+   437→   437→                          <Avatar className="h-24 w-24">
+   438→   438→                            <AvatarFallback className="bg-muted text-foreground text-3xl font-bold">
+   439→   439→                              {user.name.charAt(0).toUpperCase()}
+   440→   440→                            </AvatarFallback>
+   441→   441→                          </Avatar>
+   442→   442→                          <button className="absolute inset-0 rounded-full bg-black/40 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+   443→   443→                            <Camera className="h-6 w-6 text-white" />
+   444→   444→                          </button>
+   445→   445→                        </div>
+   446→   446→                      </div>
+   447→   447→
+   448→   448→                      <Separator />
+   449→   449→
+   450→   450→                      {isEditing ? (
+   451→   451→                        <div className="space-y-4 max-w-md mx-auto">
+   452→   452→                          <div className="space-y-1.5">
+   453→   453→                            <Label htmlFor="editName">Full Name</Label>
+   454→   454→                            <Input id="editName" value={editName} onChange={(e) => setEditName(e.target.value)} className="border-border" />
+   455→   455→                          </div>
+   456→   456→                          <div className="space-y-1.5">
+   457→   457→                            <Label htmlFor="editEmail">Email Address</Label>
+   458→   458→                            <Input id="editEmail" type="email" value={editEmail} onChange={(e) => setEditEmail(e.target.value)} className="border-border" />
+   459→   459→                          </div>
+   460→   460→                          <div className="space-y-1.5">
+   461→   461→                            <Label htmlFor="editPhone">Phone Number</Label>
+   462→   462→                            <Input id="editPhone" value={editPhone} onChange={(e) => setEditPhone(e.target.value)} className="border-border" />
+   463→   463→                          </div>
+   464→   464→                          <div className="flex gap-3">
+   465→   465→                            <button onClick={handleSaveProfile} className="flex-1 bg-foreground text-background hover:bg-foreground/90 h-10 rounded-md text-sm font-medium transition-colors">Save Changes</button>
+   466→   466→                            <button onClick={() => setIsEditing(false)} className="border border-border hover:bg-accent h-10 px-4 rounded-md text-sm font-medium transition-colors">Cancel</button>
+   467→   467→                          </div>
+   468→   468→                        </div>
+   469→   469→                      ) : (
+   470→   470→                        <div className="space-y-4 max-w-md mx-auto">
+   471→   471→                          <div className="flex items-center justify-between py-2">
+   472→   472→                            <span className="text-sm text-muted-foreground">Full Name</span>
+   473→   473→                            <span className="font-medium text-sm">{user.name}</span>
+   474→   474→                          </div>
+   475→   475→                          <Separator />
+   476→   476→                          <div className="flex items-center justify-between py-2">
+   477→   477→                            <span className="text-sm text-muted-foreground">Email Address</span>
+   478→   478→                            <span className="font-medium text-sm">{user.email}</span>
+   479→   479→                          </div>
+   480→   480→                          <Separator />
+   481→   481→                          <div className="flex items-center justify-between py-2">
+   482→   482→                            <span className="text-sm text-muted-foreground">Phone Number</span>
+   483→   483→                            <span className="font-medium text-sm">{user.phone || 'Not set'}</span>
+   484→   484→                          </div>
+   485→   485→                          <Separator />
+   486→   486→                          <div className="flex items-center justify-between py-2">
+   487→   487→                            <span className="text-sm text-muted-foreground">Role</span>
+   488→   488→                            <span className="text-xs border border-border px-2 py-0.5 rounded-sm font-medium bg-muted text-foreground capitalize">{user.role}</span>
+   489→   489→                          </div>
+   490→   490→                          <button onClick={() => setIsEditing(true)} className="w-full border border-border hover:bg-accent h-10 rounded-md text-sm font-medium transition-colors mt-2">
+   491→   491→                            Edit Profile
+   492→   492→                          </button>
+   493→   493→                        </div>
+   494→   494→                      )}
+   495→   495→                    </div>
+   496→   496→                  </div>
+   497→   497→                )}
+   498→   498→
+   499→   499→                {/* ── Orders Tab ── */}
+   500→   500→                {activeTab === 'orders' && (
+   501→   501→                  <div className="border border-border">
+   502→   502→                    <div className="p-6">
+   503→   503→                      <h2 className="font-semibold flex items-center gap-2">
+   504→   504→                        <Package className="h-5 w-5" />
+   505→   505→                        My Orders
+   506→   506→                      </h2>
+   507→   507→                      <p className="text-sm text-muted-foreground">View and track your orders</p>
+   508→   508→                    </div>
+   509→   509→                    <div className="px-6 pb-6">
+   510→   510→                      {orders.length === 0 ? (
+   511→   511→                        <div className="flex flex-col items-center justify-center py-12 text-center">
+   512→   512→                          <ShoppingBag className="h-16 w-16 text-muted-foreground/30 mb-4" />
+   513→   513→                          <h3 className="font-semibold text-lg mb-1">No orders yet</h3>
+   514→   514→                          <p className="text-muted-foreground text-sm mb-4">Your order history will appear here</p>
+   515→   515→                          <button onClick={() => navigate('shop')} className="bg-foreground text-background hover:bg-foreground/90 h-10 px-6 rounded-md text-sm font-medium transition-colors">Start Shopping</button>
+   516→   516→                        </div>
+   517→   517→                      ) : (
+   518→   518→                        <>
+   519→   519→                          {/* Desktop Table */}
+   520→   520→                          <div className="hidden md:block">
+   521→   521→                            <ScrollArea className="max-h-96">
+   522→   522→                              <Table>
+   523→   523→                                <TableHeader>
+   524→   524→                                  <TableRow>
+   525→   525→                                    <TableHead>Order #</TableHead>
+   526→   526→                                    <TableHead>Date</TableHead>
+   527→   527→                                    <TableHead>Items</TableHead>
+   528→   528→                                    <TableHead>Total</TableHead>
+   529→   529→                                    <TableHead>Status</TableHead>
+   530→   530→                                    <TableHead className="text-right">Action</TableHead>
+   531→   531→                                  </TableRow>
+   532→   532→                                </TableHeader>
+   533→   533→                                <TableBody>
+   534→   534→                                  {orders.map((order) => {
+   535→   535→                                    const statusCfg = orderStatusConfig[order.status];
+   536→   536→                                    return (
+   537→   537→                                      <TableRow key={order.id} className="cursor-pointer hover:bg-muted/50" onClick={() => setSelectedOrder(order)}>
+   538→   538→                                        <TableCell className="font-medium font-mono text-sm">#{order.orderNumber}</TableCell>
+   539→   539→                                        <TableCell className="text-sm">{formatDate(order.createdAt)}</TableCell>
+   540→   540→                                        <TableCell className="text-sm">{order.items.length} item{order.items.length > 1 ? 's' : ''}</TableCell>
+   541→   541→                                        <TableCell className="font-semibold text-sm">{formatCurrency(order.total)}</TableCell>
+   542→   542→                                        <TableCell>
+   543→   543→                                          <span className={`text-[11px] gap-1 border px-2 py-0.5 rounded-sm inline-flex items-center font-medium ${statusCfg?.color ?? ''}`}>
+   544→   544→                                            {statusCfg?.icon}
+   545→   545→                                            <span className="ml-1">{statusCfg?.label ?? order.status}</span>
+   546→   546→                                          </span>
+   547→   547→                                        </TableCell>
+   548→   548→                                        <TableCell className="text-right">
+   549→   549→                                          <button variant="ghost" size="sm" onClick={(e) => { e.stopPropagation(); setSelectedOrder(order); }} className="text-muted-foreground hover:text-foreground transition-colors">
+   550→   550→                                            <Eye className="h-4 w-4" />
+   551→   551→                                          </button>
+   552→   552→                                        </TableCell>
+   553→   553→                                      </TableRow>
+   554→   554→                                    );
+   555→   555→                                  })}
+   556→   556→                                </TableBody>
+   557→   557→                              </Table>
+   558→   558→                            </ScrollArea>
+   559→   559→                          </div>
+   560→   560→
+   561→   561→                          {/* Mobile Cards */}
+   562→   562→                          <div className="md:hidden space-y-3">
+   563→   563→                            {orders.map((order) => {
+   564→   564→                              const statusCfg = orderStatusConfig[order.status];
+   565→   565→                              return (
+   566→   566→                                <div
+   567→   567→                                  key={order.id}
+   568→   568→                                  onClick={() => setSelectedOrder(order)}
+   569→   569→                                  className="p-4 rounded-lg border border-border bg-card hover:bg-muted/30 cursor-pointer transition-colors"
+   570→   570→                                >
+   571→   571→                                  <div className="flex items-center justify-between mb-2">
+   572→   572→                                    <span className="font-mono text-sm font-medium">#{order.orderNumber}</span>
+   573→   573→                                    <span className={`text-[11px] gap-1 border px-2 py-0.5 rounded-sm inline-flex items-center font-medium ${statusCfg?.color ?? ''}`}>
+   574→   574→                                      {statusCfg?.icon}
+   575→   575→                                      <span className="ml-1">{statusCfg?.label ?? order.status}</span>
+   576→   576→                                    </span>
+   577→   577→                                  </div>
+   578→   578→                                  <div className="flex items-center justify-between text-sm text-muted-foreground">
+   579→   579→                                    <span>{formatDate(order.createdAt)} · {order.items.length} item{order.items.length > 1 ? 's' : ''}</span>
+   580→   580→                                    <span className="font-semibold text-foreground">{formatCurrency(order.total)}</span>
+   581→   581→                                  </div>
+   582→   582→                                </div>
+   583→   583→                              );
+   584→   584→                            })}
+   585→   585→                          </div>
+   586→   586→                        </>
+   587→   587→                      )}
+   588→   588→                    </div>
+   589→   589→                  </div>
+   590→   590→                )}
+   591→   591→
+   592→   592→                {/* ── Wishlist Tab ── */}
+   593→   593→                {activeTab === 'wishlist' && (
+   594→   594→                  <div className="border border-border">
+   595→   595→                    <div className="p-6">
+   596→   596→                      <h2 className="font-semibold flex items-center gap-2">
+   597→   597→                        <Heart className="h-5 w-5 text-muted-foreground" />
+   598→   598→                        My Wishlist
+   599→   599→                      </h2>
+   600→   600→                      <p className="text-sm text-muted-foreground">Products you&apos;ve saved for later</p>
+   601→   601→                    </div>
+   602→   602→                    <div className="px-6 pb-6">
+   603→   603→                      {wishlistItems.length === 0 ? (
+   604→   604→                        <div className="flex flex-col items-center justify-center py-12 text-center">
+   605→   605→                          <Heart className="h-16 w-16 text-muted-foreground/30 mb-4" />
+   606→   606→                          <h3 className="font-semibold text-lg mb-1">Wishlist is empty</h3>
+   607→   607→                          <p className="text-muted-foreground text-sm mb-4">Save items you love for later</p>
+   608→   608→                          <button onClick={() => navigate('shop')} className="bg-foreground text-background hover:bg-foreground/90 h-10 px-6 rounded-md text-sm font-medium transition-colors">Browse Products</button>
+   609→   609→                        </div>
+   610→   610→                      ) : (
+   611→   611→                        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4">
+   612→   612→                          {wishlistItems.map((product) => (
+   613→   613→                            <div key={product.id} className="group rounded-lg border border-border bg-card overflow-hidden">
+   614→   614→                              <div
+   615→   615→                                className="aspect-square bg-muted relative cursor-pointer"
+   616→   616→                                onClick={() => useUIStore.getState().viewProduct(product.id)}
+   617→   617→                              >
+   618→   618→                                {product.images?.[0] ? (
+   619→   619→                                  <img src={product.images[0].url} alt={product.name} className="h-full w-full object-cover" />
+   620→   620→                                ) : (
+   621→   621→                                  <div className="h-full w-full flex items-center justify-center">
+   622→   622→                                    <ShoppingBag className="h-12 w-12 text-muted-foreground/20" />
+   623→   623→                                  </div>
+   624→   624→                                )}
+   625→   625→                                {product.discountPrice && (
+   626→   626→                                  <span className="absolute top-2 left-2 bg-foreground text-background text-xs px-1.5 py-0.5 rounded-sm font-medium">
+   627→   627→                                    -{Math.round(((product.price - product.discountPrice) / product.price) * 100)}%
+   628→   628→                                  </span>
+   629→   629→                                )}
+   630→   630→                              </div>
+   631→   631→                              <div className="p-3 space-y-2">
+   632→   632→                                <h4 className="font-medium text-sm line-clamp-1 cursor-pointer hover:text-foreground/70 transition-colors" onClick={() => useUIStore.getState().viewProduct(product.id)}>
+   633→   633→                                  {product.name}
+   634→   634→                                </h4>
+   635→   635→                                <div className="flex items-center gap-2">
+   636→   636→                                  <span className="font-semibold text-foreground">{formatCurrency(product.discountPrice ?? product.price)}</span>
+   637→   637→                                  {product.discountPrice && (
+   638→   638→                                    <span className="text-xs text-muted-foreground line-through">{formatCurrency(product.price)}</span>
+   639→   639→                                  )}
+   640→   640→                                </div>
+   641→   641→                                <div className="flex items-center gap-1">
+   642→   642→                                  {Array.from({ length: 5 }).map((_, i) => (
+   643→   643→                                    <Star
+   644→   644→                                      key={i}
+   645→   645→                                      className={`h-3.5 w-3.5 ${i < Math.round(product.rating) ? 'fill-amber-400 text-amber-400' : 'text-muted-foreground/30'}`}
+   646→   646→                                    />
+   647→   647→                                  ))}
+   648→   648→                                  <span className="text-xs text-muted-foreground ml-1">({product.reviewCount})</span>
+   649→   649→                                </div>
+   650→   650→                                <div className="flex gap-2">
+   651→   651→                                  <button className="flex-1 h-8 bg-foreground text-background hover:bg-foreground/90 rounded-md text-xs font-medium transition-colors inline-flex items-center justify-center gap-1" onClick={() => addCartItem(product)}>
+   652→   652→                                    <ShoppingBag className="h-3.5 w-3.5" />
+   653→   653→                                    Add to Cart
+   654→   654→                                  </button>
+   655→   655→                                  <button className="h-8 w-8 border border-border hover:bg-accent rounded-md text-muted-foreground hover:text-foreground transition-colors inline-flex items-center justify-center" onClick={() => removeWishlistItem(product.id)}>
+   656→   656→                                    <Trash2 className="h-3.5 w-3.5" />
+   657→   657→                                  </button>
+   658→   658→                                </div>
+   659→   659→                              </div>
+   660→   660→                            </div>
+   661→   661→                          ))}
+   662→   662→                        </div>
+   663→   663→                      )}
+   664→   664→                    </div>
+   665→   665→                  </div>
+   666→   666→                )}
+   667→   667→
+   668→   668→                {/* ── Addresses Tab ── */}
+   669→   669→                {activeTab === 'addresses' && (
+   670→   670→                  <div className="border border-border">
+   671→   671→                    <div className="p-6 flex flex-row items-center justify-between">
+   672→   672→                      <div>
+   673→   673→                        <h2 className="font-semibold flex items-center gap-2">
+   674→   674→                          <MapPin className="h-5 w-5" />
+   675→   675→                          My Addresses
+   676→   676→                        </h2>
+   677→   677→                        <p className="text-sm text-muted-foreground">Manage your shipping addresses</p>
+   678→   678→                      </div>
+   679→   679→                      <Dialog open={addressDialogOpen} onOpenChange={(open) => {
+   680→   680→                        setAddressDialogOpen(open);
+   681→   681→                        if (!open) { setEditingAddress(null); setAddrForm({ label: '', fullName: '', phone: '', address: '', city: '', state: '', zipCode: '', country: 'Bangladesh' }); }
+   682→   682→                      }}>
+   683→   683→                        <DialogTrigger asChild>
+   684→   684→                          <button className="bg-foreground text-background hover:bg-foreground/90 h-9 px-3 rounded-md text-sm font-medium transition-colors inline-flex items-center gap-1">
+   685→   685→                            <Plus className="h-4 w-4" />
+   686→   686→                            Add Address
+   687→   687→                          </button>
+   688→   688→                        </DialogTrigger>
+   689→   689→                        <DialogContent className="max-w-md">
+   690→   690→                          <DialogHeader>
+   691→   691→                            <DialogTitle>{editingAddress ? 'Edit Address' : 'Add New Address'}</DialogTitle>
+   692→   692→                          </DialogHeader>
+   693→   693→                          <div className="space-y-3">
+   694→   694→                            <div className="space-y-1.5">
+   695→   695→                              <Label>Label</Label>
+   696→   696→                              <Input placeholder="e.g. Home, Office" value={addrForm.label} onChange={(e) => setAddrForm({ ...addrForm, label: e.target.value })} className="border-border" />
+   697→   697→                            </div>
+   698→   698→                            <div className="grid grid-cols-2 gap-3">
+   699→   699→                              <div className="space-y-1.5">
+   700→   700→                                <Label>Full Name *</Label>
+   701→   701→                                <Input value={addrForm.fullName} onChange={(e) => setAddrForm({ ...addrForm, fullName: e.target.value })} className="border-border" />
+   702→   702→                              </div>
+   703→   703→                              <div className="space-y-1.5">
+   704→   704→                                <Label>Phone *</Label>
+   705→   705→                                <Input value={addrForm.phone} onChange={(e) => setAddrForm({ ...addrForm, phone: e.target.value })} className="border-border" />
+   706→   706→                              </div>
+   707→   707→                            </div>
+   708→   708→                            <div className="space-y-1.5">
+   709→   709→                              <Label>Address *</Label>
+   710→   710→                              <Input value={addrForm.address} onChange={(e) => setAddrForm({ ...addrForm, address: e.target.value })} className="border-border" />
+   711→   711→                            </div>
+   712→   712→                            <div className="grid grid-cols-2 gap-3">
+   713→   713→                              <div className="space-y-1.5">
+   714→   714→                                <Label>City *</Label>
+   715→   715→                                <Input value={addrForm.city} onChange={(e) => setAddrForm({ ...addrForm, city: e.target.value })} className="border-border" />
+   716→   716→                              </div>
+   717→   717→                              <div className="space-y-1.5">
+   718→   718→                                <Label>State</Label>
+   719→   719→                                <Input value={addrForm.state} onChange={(e) => setAddrForm({ ...addrForm, state: e.target.value })} className="border-border" />
+   720→   720→                              </div>
+   721→   721→                            </div>
+   722→   722→                            <div className="grid grid-cols-2 gap-3">
+   723→   723→                              <div className="space-y-1.5">
+   724→   724→                                <Label>Zip Code</Label>
+   725→   725→                                <Input value={addrForm.zipCode} onChange={(e) => setAddrForm({ ...addrForm, zipCode: e.target.value })} className="border-border" />
+   726→   726→                              </div>
+   727→   727→                              <div className="space-y-1.5">
+   728→   728→                                <Label>Country *</Label>
+   729→   729→                                <Input value={addrForm.country} onChange={(e) => setAddrForm({ ...addrForm, country: e.target.value })} className="border-border" />
+   730→   730→                              </div>
+   731→   731→                            </div>
+   732→   732→                          </div>
+   733→   733→                          <DialogFooter>
+   734→   734→                            <DialogClose asChild><button className="border border-border hover:bg-accent h-10 px-4 rounded-md text-sm font-medium transition-colors">Cancel</button></DialogClose>
+   735→   735→                            <button onClick={handleSaveAddress} className="bg-foreground text-background hover:bg-foreground/90 h-10 px-4 rounded-md text-sm font-medium transition-colors">Save Address</button>
+   736→   736→                          </DialogFooter>
+   737→   737→                        </DialogContent>
+   738→   738→                      </Dialog>
+   739→   739→                    </div>
+   740→   740→                    <div className="px-6 pb-6">
+   741→   741→                      {addresses.length === 0 ? (
+   742→   742→                        <div className="flex flex-col items-center justify-center py-12 text-center">
+   743→   743→                          <MapPin className="h-16 w-16 text-muted-foreground/30 mb-4" />
+   744→   744→                          <h3 className="font-semibold text-lg mb-1">No addresses saved</h3>
+   745→   745→                          <p className="text-muted-foreground text-sm">Add a shipping address for faster checkout</p>
+   746→   746→                        </div>
+   747→   747→                      ) : (
+   748→   748→                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+   749→   749→                          {addresses.map((addr) => (
+   750→   750→                            <div
+   751→   751→                              key={addr.id}
+   752→   752→                              className={`relative p-4 rounded-lg border transition-all hover:shadow-sm ${
+   753→   753→                                addr.isDefault ? 'border-foreground bg-foreground/5' : 'border-border'
+   754→   754→                              }`}
+   755→   755→                            >
+   756→   756→                              {addr.isDefault && (
+   757→   757→                                <span className="absolute top-3 right-3 bg-foreground text-background text-xs px-2 py-0.5 rounded-sm font-medium">Default</span>
+   758→   758→                              )}
+   759→   759→                              {addr.label && (
+   760→   760→                                <p className="font-semibold text-sm mb-1">{addr.label}</p>
+   761→   761→                              )}
+   762→   762→                              <p className="font-medium text-sm">{addr.fullName}</p>
+   763→   763→                              <p className="text-sm text-muted-foreground">{addr.phone}</p>
+   764→   764→                              <p className="text-sm text-muted-foreground mt-1">
+   765→   765→                                {addr.address}
+   766→   766→                                {addr.city && `, ${addr.city}`}
+   767→   767→                                {addr.state && `, ${addr.state}`}
+   768→   768→                                {addr.zipCode && ` - ${addr.zipCode}`}
+   769→   769→                              </p>
+   770→   770→                              <p className="text-sm text-muted-foreground">{addr.country}</p>
+   771→   771→                              <div className="flex items-center gap-2 mt-3">
+   772→   772→                                <button onClick={() => handleEditAddress(addr)} className="border border-border hover:bg-accent h-7 px-2 rounded-md text-xs font-medium transition-colors">
+   773→   773→                                  Edit
+   774→   774→                                </button>
+   775→   775→                                {!addr.isDefault && (
+   776→   776→                                  <button onClick={() => handleSetDefaultAddress(addr.id)} className="border border-border hover:bg-accent h-7 px-2 rounded-md text-xs font-medium transition-colors">
+   777→   777→                                    Set Default
+   778→   778→                                  </button>
+   779→   779→                                )}
+   780→   780→                                <button onClick={() => handleDeleteAddress(addr.id)} className="h-7 px-2 rounded-md text-xs text-muted-foreground hover:text-destructive transition-colors ml-auto inline-flex items-center">
+   781→   781→                                  <Trash2 className="h-3.5 w-3.5" />
+   782→   782→                                </button>
+   783→   783→                              </div>
+   784→   784→                            </div>
+   785→   785→                          ))}
+   786→   786→                        </div>
+   787→   787→                      )}
+   788→   788→                    </div>
+   789→   789→                  </div>
+   790→   790→                )}
+   791→   791→
+   792→   792→                {/* ── Notifications Tab ── */}
+   793→   793→                {activeTab === 'notifications' && (
+   794→   794→                  <div className="border border-border">
+   795→   795→                    <div className="p-6">
+   796→   796→                      <h2 className="font-semibold flex items-center gap-2">
+   797→   797→                        <Bell className="h-5 w-5" />
+   798→   798→                        Notifications
+   799→   799→                      </h2>
+   800→   800→                      <p className="text-sm text-muted-foreground">Stay updated on your orders and promotions</p>
+   801→   801→                    </div>
+   802→   802→                    <div className="px-6 pb-6">
+   803→   803→                      {notifications.length === 0 ? (
+   804→   804→                        <div className="flex flex-col items-center justify-center py-12 text-center">
+   805→   805→                          <Bell className="h-16 w-16 text-muted-foreground/30 mb-4" />
+   806→   806→                          <h3 className="font-semibold text-lg mb-1">No notifications</h3>
+   807→   807→                          <p className="text-muted-foreground text-sm">We&apos;ll notify you about order updates and deals</p>
+   808→   808→                        </div>
+   809→   809→                      ) : (
+   810→   810→                        <ScrollArea className="max-h-96">
+   811→   811→                          <div className="space-y-2">
+   812→   812→                            {notifications.map((notif) => (
+   813→   813→                              <div
+   814→   814→                                key={notif.id}
+   815→   815→                                onClick={() => handleMarkNotificationRead(notif.id)}
+   816→   816→                                className={`flex items-start gap-3 p-3 rounded-lg border cursor-pointer transition-colors hover:bg-muted/50 ${
+   817→   817→                                  !notif.isRead ? 'bg-foreground/5 border-foreground/20' : 'border-border'
+   818→   818→                                }`}
+   819→   819→                              >
+   820→   820→                                <div className="mt-0.5">
+   821→   821→                                  {notificationIcons[notif.type] ?? notificationIcons.system}
+   822→   822→                                </div>
+   823→   823→                                <div className="flex-1 min-w-0">
+   824→   824→                                  <div className="flex items-center gap-2">
+   825→   825→                                    <p className={`text-sm ${!notif.isRead ? 'font-semibold' : 'font-medium'}`}>{notif.title}</p>
+   826→   826→                                    {!notif.isRead && (
+   827→   827→                                      <span className="h-2 w-2 rounded-full bg-foreground shrink-0" />
+   828→   828→                                    )}
+   829→   829→                                  </div>
+   830→   830→                                  <p className="text-sm text-muted-foreground mt-0.5 line-clamp-2">{notif.message}</p>
+   831→   831→                                  <p className="text-xs text-muted-foreground mt-1">{timeAgo(notif.createdAt)}</p>
+   832→   832→                                </div>
+   833→   833→                              </div>
+   834→   834→                            ))}
+   835→   835→                          </div>
+   836→   836→                        </ScrollArea>
+   837→   837→                      )}
+   838→   838→                    </div>
+   839→   839→                  </div>
+   840→   840→                )}
+   841→   841→
+   842→   842→                {/* ── Settings Tab ── */}
+   843→   843→                {activeTab === 'settings' && (
+   844→   844→                  <div className="space-y-6">
+   845→   845→                    {/* Change Password */}
+   846→   846→                    <div className="border border-border">
+   847→   847→                      <div className="p-6">
+   848→   848→                        <h2 className="font-semibold">Change Password</h2>
+   849→   849→                        <p className="text-sm text-muted-foreground">Update your account password</p>
+   850→   850→                      </div>
+   851→   851→                      <div className="px-6 pb-6 space-y-4 max-w-md">
+   852→   852→                        <div className="space-y-1.5">
+   853→   853→                          <Label>Current Password</Label>
+   854→   854→                          <Input type="password" value={currentPassword} onChange={(e) => setCurrentPassword(e.target.value)} placeholder="Enter current password" className="border-border" />
+   855→   855→                        </div>
+   856→   856→                        <div className="space-y-1.5">
+   857→   857→                          <Label>New Password</Label>
+   858→   858→                          <Input type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="Enter new password" className="border-border" />
+   859→   859→                        </div>
+   860→   860→                        <div className="space-y-1.5">
+   861→   861→                          <Label>Confirm New Password</Label>
+   862→   862→                          <Input type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} placeholder="Confirm new password" className="border-border" />
+   863→   863→                        </div>
+   864→   864→                        <button
+   865→   865→                          onClick={() => {
+   866→   866→                            if (newPassword && newPassword === confirmPassword) {
+   867→   867→                              setCurrentPassword(''); setNewPassword(''); setConfirmPassword('');
+   868→   868→                            }
+   869→   869→                          }}
+   870→   870→                          disabled={!currentPassword || !newPassword || !confirmPassword || newPassword !== confirmPassword}
+   871→   871→                          className="bg-foreground text-background hover:bg-foreground/90 h-10 px-6 rounded-md text-sm font-medium transition-colors disabled:opacity-50"
+   872→   872→                        >
+   873→   873→                          Update Password
+   874→   874→                        </button>
+   875→   875→                      </div>
+   876→   876→                    </div>
+   877→   877→
+   878→   878→                    {/* Theme Preference */}
+   879→   879→                    <div className="border border-border">
+   880→   880→                      <div className="p-6">
+   881→   881→                        <h2 className="font-semibold">Appearance</h2>
+   882→   882→                        <p className="text-sm text-muted-foreground">Customize how NextShop looks for you</p>
+   883→   883→                      </div>
+   884→   884→                      <div className="px-6 pb-6">
+   885→   885→                        <p className="text-sm text-muted-foreground">
+   886→   886→                          Theme preference can be changed using the theme toggle in the header.
+   887→   887→                        </p>
+   888→   888→                      </div>
+   889→   889→                    </div>
+   890→   890→
+   891→   891→                    {/* Delete Account */}
+   892→   892→                    <div className="border border-destructive/30">
+   893→   893→                      <div className="p-6">
+   894→   894→                        <h2 className="font-semibold text-destructive">Delete Account</h2>
+   895→   895→                        <p className="text-sm text-muted-foreground">Permanently delete your account and all data</p>
+   896→   896→                      </div>
+   897→   897→                      <div className="px-6 pb-6 space-y-4">
+   898→   898→                        <p className="text-sm text-muted-foreground">
+   899→   899→                          This action cannot be undone. All your data including orders, addresses, and preferences will be permanently removed.
+   900→   900→                        </p>
+   901→   901→                        <div className="space-y-1.5 max-w-md">
+   902→   902→                          <Label>Type &quot;DELETE&quot; to confirm</Label>
+   903→   903→                          <Input
+   904→   904→                            value={deleteConfirmText}
+   905→   905→                            onChange={(e) => setDeleteConfirmText(e.target.value)}
+   906→   906→                            placeholder='Type "DELETE" here'
+   907→   907→                            className="border-border"
+   908→   908→                          />
+   909→   909→                        </div>
+   910→   910→                        <button
+   911→   911→                          disabled={deleteConfirmText !== 'DELETE'}
+   912→   912→                          onClick={() => {
+   913→   913→                            logout();
+   914→   914→                            setDeleteConfirmText('');
+   915→   915→                          }}
+   916→   916→                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90 h-10 px-6 rounded-md text-sm font-medium transition-colors disabled:opacity-50"
+   917→   917→                        >
+   918→   918→                          Delete My Account
+   919→   919→                        </button>
+   920→   920→                      </div>
+   921→   921→                    </div>
+   922→   922→                  </div>
+   923→   923→                )}
+   924→   924→              </>
+   925→   925→            )}
+   926→   926→          </main>
+   927→   927→        </div>
+   928→   928→      </div>
+   929→   929→    </>
+   930→   930→  );
+   931→   931→}

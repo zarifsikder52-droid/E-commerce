@@ -1,0 +1,753 @@
+     1→'use client';
+     2→
+     3→import { useEffect, useState, useCallback } from 'react';
+     4→import { useUIStore } from '@/store/use-ui';
+     5→import { useCartStore } from '@/store/use-cart';
+     6→import { useWishlistStore } from '@/store/use-wishlist';
+     7→import { Button } from '@/components/ui/button';
+     8→import { Card } from '@/components/ui/card';
+     9→import { Input } from '@/components/ui/input';
+    10→import { Badge } from '@/components/ui/badge';
+    11→import { Slider } from '@/components/ui/slider';
+    12→import { Checkbox } from '@/components/ui/checkbox';
+    13→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+    14→import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
+    15→import { Separator } from '@/components/ui/separator';
+    16→import {
+    17→  Breadcrumb,
+    18→  BreadcrumbItem,
+    19→  BreadcrumbLink,
+    20→  BreadcrumbList,
+    21→  BreadcrumbSeparator,
+    22→  BreadcrumbPage,
+    23→} from '@/components/ui/breadcrumb';
+    24→import { Skeleton } from '@/components/ui/skeleton';
+    25→import ProductCard from './ProductCard';
+    26→import { SlidersHorizontal, X, Grid3X3, List, Star, ChevronDown, Search, PackageOpen } from 'lucide-react';
+    27→import { cn, formatPrice } from '@/lib/utils';
+    28→import type { Product, Category, Brand } from '@/types';
+    29→
+    30→const PRODUCTS_PER_PAGE = 12;
+    31→const MAX_PRICE = 300000;
+    32→
+    33→type ViewMode = 'grid' | 'list';
+    34→type SortOption = 'popularity' | 'newest' | 'price-asc' | 'price-desc' | 'rating';
+    35→
+    36→interface FilterState {
+    37→  search: string;
+    38→  categories: string[];
+    39→  brands: string[];
+    40→  priceRange: [number, number];
+    41→  minRating: number;
+    42→  inStock: boolean;
+    43→  onSale: boolean;
+    44→  sort: SortOption;
+    45→  page: number;
+    46→}
+    47→
+    48→function getInitialFilters(): FilterState {
+    49→  return {
+    50→    search: '',
+    51→    categories: [],
+    52→    brands: [],
+    53→    priceRange: [0, MAX_PRICE],
+    54→    minRating: 0,
+    55→    inStock: false,
+    56→    onSale: false,
+    57→    sort: 'popularity',
+    58→    page: 1,
+    59→  };
+    60→}
+    61→
+    62→// ─── Filter Sidebar Content (shared between desktop & sheet) ───────────
+    63→
+    64→interface FilterSidebarProps {
+    65→  filters: FilterState;
+    66→  setFilters: React.Dispatch<React.SetStateAction<FilterState>>;
+    67→  categories: Category[];
+    68→  brands: Brand[];
+    69→  onClose?: () => void;
+    70→}
+    71→
+    72→function FilterSidebar({ filters, setFilters, categories, brands, onClose }: FilterSidebarProps) {
+    73→  const updateFilter = <K extends keyof FilterState>(key: K, value: FilterState[K]) => {
+    74→    setFilters((prev) => ({ ...prev, [key]: value, page: 1 }));
+    75→  };
+    76→
+    77→  const toggleArrayFilter = (key: 'categories' | 'brands', id: string) => {
+    78→    setFilters((prev) => {
+    79→      const arr = prev[key] as string[];
+    80→      const next = arr.includes(id) ? arr.filter((v) => v !== id) : [...arr, id];
+    81→      return { ...prev, [key]: next, page: 1 };
+    82→    });
+    83→  };
+    84→
+    85→  const clearAll = () => {
+    86→    setFilters(getInitialFilters());
+    87→    onClose?.();
+    88→  };
+    89→
+    90→  const hasActiveFilters =
+    91→    filters.categories.length > 0 ||
+    92→    filters.brands.length > 0 ||
+    93→    filters.priceRange[0] > 0 ||
+    94→    filters.priceRange[1] < MAX_PRICE ||
+    95→    filters.minRating > 0 ||
+    96→    filters.inStock ||
+    97→    filters.onSale ||
+    98→    filters.search;
+    99→
+   100→  return (
+   101→    <div className="space-y-6">
+   102→      {/* Header */}
+   103→      <div className="flex items-center justify-between">
+   104→        <h3 className="font-semibold text-lg">Filters</h3>
+   105→        {hasActiveFilters && (
+   106→          <Button variant="ghost" size="sm" onClick={clearAll} className="text-xs text-red-600 hover:text-red-700">
+   107→            Clear All
+   108→          </Button>
+   109→        )}
+   110→      </div>
+   111→
+   112→      <Separator />
+   113→
+   114→      {/* Search */}
+   115→      <div className="relative">
+   116→        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-muted-foreground" />
+   117→        <Input
+   118→          placeholder="Search products..."
+   119→          value={filters.search}
+   120→          onChange={(e) => updateFilter('search', e.target.value)}
+   121→          className="pl-9"
+   122→        />
+   123→      </div>
+   124→
+   125→      {/* Categories */}
+   126→      {categories.length > 0 && (
+   127→        <div className="space-y-3">
+   128→          <h4 className="font-medium text-sm">Categories</h4>
+   129→          <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+   130→            {categories.map((cat) => (
+   131→              <label
+   132→                key={cat.id}
+   133→                className="flex items-center gap-2.5 cursor-pointer group"
+   134→                onClick={() => toggleArrayFilter('categories', cat.id)}
+   135→              >
+   136→                <Checkbox
+   137→                  checked={filters.categories.includes(cat.id)}
+   138→                  onCheckedChange={() => toggleArrayFilter('categories', cat.id)}
+   139→                />
+   140→                <span className="text-sm flex-1 group-hover:text-emerald-700 transition-colors">
+   141→                  {cat.name}
+   142→                </span>
+   143→                <span className="text-xs text-muted-foreground">({cat._count?.products ?? 0})</span>
+   144→              </label>
+   145→            ))}
+   146→          </div>
+   147→        </div>
+   148→      )}
+   149→
+   150→      <Separator />
+   151→
+   152→      {/* Brands */}
+   153→      {brands.length > 0 && (
+   154→        <div className="space-y-3">
+   155→          <h4 className="font-medium text-sm">Brands</h4>
+   156→          <div className="space-y-2 max-h-48 overflow-y-auto pr-1">
+   157→            {brands.map((brand) => (
+   158→              <label
+   159→                key={brand.id}
+   160→                className="flex items-center gap-2.5 cursor-pointer group"
+   161→                onClick={() => toggleArrayFilter('brands', brand.id)}
+   162→              >
+   163→                <Checkbox
+   164→                  checked={filters.brands.includes(brand.id)}
+   165→                  onCheckedChange={() => toggleArrayFilter('brands', brand.id)}
+   166→                />
+   167→                <span className="text-sm flex-1 group-hover:text-emerald-700 transition-colors">
+   168→                  {brand.name}
+   169→                </span>
+   170→                <span className="text-xs text-muted-foreground">({brand._count?.products ?? 0})</span>
+   171→              </label>
+   172→            ))}
+   173→          </div>
+   174→        </div>
+   175→      )}
+   176→
+   177→      <Separator />
+   178→
+   179→      {/* Price Range */}
+   180→      <div className="space-y-3">
+   181→        <h4 className="font-medium text-sm">Price Range</h4>
+   182→        <Slider
+   183→          min={0}
+   184→          max={MAX_PRICE}
+   185→          step={500}
+   186→          value={filters.priceRange}
+   187→          onValueChange={(val) => updateFilter('priceRange', val as [number, number])}
+   188→          className="mt-2"
+   189→        />
+   190→        <div className="flex items-center justify-between text-xs text-muted-foreground">
+   191→          <span>{formatPrice(filters.priceRange[0])}</span>
+   192→          <span>{formatPrice(filters.priceRange[1])}</span>
+   193→        </div>
+   194→      </div>
+   195→
+   196→      <Separator />
+   197→
+   198→      {/* Rating */}
+   199→      <div className="space-y-3">
+   200→        <h4 className="font-medium text-sm">Rating</h4>
+   201→        <div className="space-y-2">
+   202→          {[4, 3, 2, 1].map((r) => (
+   203→            <label
+   204→              key={r}
+   205→              className="flex items-center gap-2.5 cursor-pointer group"
+   206→              onClick={() => updateFilter('minRating', filters.minRating === r ? 0 : r)}
+   207→            >
+   208→              <Checkbox checked={filters.minRating === r} />
+   209→              <div className="flex items-center gap-0.5">
+   210→                {Array.from({ length: 5 }, (_, i) => (
+   211→                  <Star
+   212→                    key={i}
+   213→                    className={cn(
+   214→                      'size-3.5',
+   215→                      i < r ? 'fill-amber-400 text-amber-400' : 'fill-muted text-muted'
+   216→                    )}
+   217→                  />
+   218→                ))}
+   219→                <span className="text-xs text-muted-foreground ml-1">& up</span>
+   220→              </div>
+   221→            </label>
+   222→          ))}
+   223→        </div>
+   224→      </div>
+   225→
+   226→      <Separator />
+   227→
+   228→      {/* Availability */}
+   229→      <div className="space-y-3">
+   230→        <h4 className="font-medium text-sm">Availability</h4>
+   231→        <label className="flex items-center gap-2.5 cursor-pointer">
+   232→          <Checkbox
+   233→            checked={filters.inStock}
+   234→            onCheckedChange={(checked) => updateFilter('inStock', !!checked)}
+   235→          />
+   236→          <span className="text-sm">In Stock Only</span>
+   237→        </label>
+   238→      </div>
+   239→
+   240→      <Separator />
+   241→
+   242→      {/* On Sale */}
+   243→      <div className="space-y-3">
+   244→        <h4 className="font-medium text-sm">Special Offers</h4>
+   245→        <label className="flex items-center gap-2.5 cursor-pointer">
+   246→          <Checkbox
+   247→            checked={filters.onSale}
+   248→            onCheckedChange={(checked) => updateFilter('onSale', !!checked)}
+   249→          />
+   250→          <span className="text-sm">On Sale</span>
+   251→        </label>
+   252→      </div>
+   253→    </div>
+   254→  );
+   255→}
+   256→
+   257→// ─── Active Filter Badges ───────────────────────────────────────────────
+   258→
+   259→interface ActiveFiltersProps {
+   260→  filters: FilterState;
+   261→  setFilters: React.Dispatch<React.SetStateAction<FilterState>>;
+   262→  categories: Category[];
+   263→  brands: Brand[];
+   264→}
+   265→
+   266→function ActiveFilters({ filters, setFilters, categories, brands }: ActiveFiltersProps) {
+   267→  const removeCategory = (id: string) => {
+   268→    setFilters((prev) => ({
+   269→      ...prev,
+   270→      categories: prev.categories.filter((c) => c !== id),
+   271→      page: 1,
+   272→    }));
+   273→  };
+   274→
+   275→  const removeBrand = (id: string) => {
+   276→    setFilters((prev) => ({
+   277→      ...prev,
+   278→      brands: prev.brands.filter((b) => b !== id),
+   279→      page: 1,
+   280→    }));
+   281→  };
+   282→
+   283→  const clearPrice = () => {
+   284→    setFilters((prev) => ({ ...prev, priceRange: [0, MAX_PRICE], page: 1 }));
+   285→  };
+   286→
+   287→  const clearRating = () => {
+   288→    setFilters((prev) => ({ ...prev, minRating: 0, page: 1 }));
+   289→  };
+   290→
+   291→  const clearStock = () => {
+   292→    setFilters((prev) => ({ ...prev, inStock: false, page: 1 }));
+   293→  };
+   294→
+   295→  const clearSale = () => {
+   296→    setFilters((prev) => ({ ...prev, onSale: false, page: 1 }));
+   297→  };
+   298→
+   299→  const clearSearch = () => {
+   300→    setFilters((prev) => ({ ...prev, search: '', page: 1 }));
+   301→  };
+   302→
+   303→  const badges: { label: string; onRemove: () => void }[] = [];
+   304→
+   305→  if (filters.search) {
+   306→    badges.push({ label: `Search: "${filters.search}"`, onRemove: clearSearch });
+   307→  }
+   308→  filters.categories.forEach((id) => {
+   309→    const cat = categories.find((c) => c.id === id);
+   310→    if (cat) badges.push({ label: cat.name, onRemove: () => removeCategory(id) });
+   311→  });
+   312→  filters.brands.forEach((id) => {
+   313→    const brand = brands.find((b) => b.id === id);
+   314→    if (brand) badges.push({ label: brand.name, onRemove: () => removeBrand(id) });
+   315→  });
+   316→  if (filters.priceRange[0] > 0 || filters.priceRange[1] < MAX_PRICE) {
+   317→    badges.push({
+   318→      label: `${formatPrice(filters.priceRange[0])} - ${formatPrice(filters.priceRange[1])}`,
+   319→      onRemove: clearPrice,
+   320→    });
+   321→  }
+   322→  if (filters.minRating > 0) {
+   323→    badges.push({ label: `${filters.minRating}+ Stars`, onRemove: clearRating });
+   324→  }
+   325→  if (filters.inStock) {
+   326→    badges.push({ label: 'In Stock', onRemove: clearStock });
+   327→  }
+   328→  if (filters.onSale) {
+   329→    badges.push({ label: 'On Sale', onRemove: clearSale });
+   330→  }
+   331→
+   332→  if (badges.length === 0) return null;
+   333→
+   334→  return (
+   335→    <div className="flex flex-wrap items-center gap-2">
+   336→      <span className="text-sm text-muted-foreground">Active Filters:</span>
+   337→      {badges.map((b, i) => (
+   338→        <Badge key={i} variant="secondary" className="gap-1 pr-1 py-1">
+   339→          {b.label}
+   340→          <button
+   341→            onClick={b.onRemove}
+   342→            className="ml-0.5 rounded-full hover:bg-muted-foreground/20 p-0.5 transition-colors"
+   343→          >
+   344→            <X className="size-3" />
+   345→          </button>
+   346→        </Badge>
+   347→      ))}
+   348→    </div>
+   349→  );
+   350→}
+   351→
+   352→// ─── Pagination ─────────────────────────────────────────────────────────
+   353→
+   354→function Pagination({
+   355→  currentPage,
+   356→  totalPages,
+   357→  onPageChange,
+   358→}: {
+   359→  currentPage: number;
+   360→  totalPages: number;
+   361→  onPageChange: (page: number) => void;
+   362→}) {
+   363→  if (totalPages <= 1) return null;
+   364→
+   365→  const getPageNumbers = (): (number | '...')[] => {
+   366→    const pages: (number | '...')[] = [];
+   367→    if (totalPages <= 7) {
+   368→      for (let i = 1; i <= totalPages; i++) pages.push(i);
+   369→    } else {
+   370→      pages.push(1);
+   371→      if (currentPage > 3) pages.push('...');
+   372→      const start = Math.max(2, currentPage - 1);
+   373→      const end = Math.min(totalPages - 1, currentPage + 1);
+   374→      for (let i = start; i <= end; i++) pages.push(i);
+   375→      if (currentPage < totalPages - 2) pages.push('...');
+   376→      pages.push(totalPages);
+   377→    }
+   378→    return pages;
+   379→  };
+   380→
+   381→  return (
+   382→    <nav className="flex items-center justify-center gap-1" aria-label="Pagination">
+   383→      <Button
+   384→        variant="outline"
+   385→        size="sm"
+   386→        disabled={currentPage === 1}
+   387→        onClick={() => onPageChange(currentPage - 1)}
+   388→        className="h-8 w-8 p-0"
+   389→      >
+   390→        ‹
+   391→      </Button>
+   392→      {getPageNumbers().map((page, i) =>
+   393→        page === '...' ? (
+   394→          <span key={`ellipsis-${i}`} className="px-2 text-muted-foreground">
+   395→            ...
+   396→          </span>
+   397→        ) : (
+   398→          <Button
+   399→            key={page}
+   400→            variant={page === currentPage ? 'default' : 'outline'}
+   401→            size="sm"
+   402→            onClick={() => onPageChange(page)}
+   403→            className={cn(
+   404→              'h-8 w-8 p-0',
+   405→              page === currentPage && 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-600'
+   406→            )}
+   407→          >
+   408→            {page}
+   409→          </Button>
+   410→        )
+   411→      )}
+   412→      <Button
+   413→        variant="outline"
+   414→        size="sm"
+   415→        disabled={currentPage === totalPages}
+   416→        onClick={() => onPageChange(currentPage + 1)}
+   417→        className="h-8 w-8 p-0"
+   418→      >
+   419→        ›
+   420→      </Button>
+   421→    </nav>
+   422→  );
+   423→}
+   424→
+   425→// ─── Main ShopPage Component ────────────────────────────────────────────
+   426→
+   427→export default function ShopPage() {
+   428→  const {
+   429→    categories,
+   430→    brands,
+   431→    setCategories,
+   432→    setBrands,
+   433→    selectedCategoryId,
+   434→    setCategory,
+   435→    navigate,
+   436→  } = useUIStore();
+   437→
+   438→  const [filters, setFilters] = useState<FilterState>(getInitialFilters);
+   439→  const [products, setProducts] = useState<Product[]>([]);
+   440→  const [totalProducts, setTotalProducts] = useState(0);
+   441→  const [totalPages, setTotalPages] = useState(0);
+   442→  const [viewMode, setViewMode] = useState<ViewMode>('grid');
+   443→  const [isLoading, setIsLoading] = useState(false);
+   444→  const [sheetOpen, setSheetOpen] = useState(false);
+   445→
+   446→  // Sync selectedCategoryId from store
+   447→  useEffect(() => {
+   448→    if (selectedCategoryId) {
+   449→      setFilters((prev) => ({
+   450→        ...prev,
+   451→        categories: [selectedCategoryId],
+   452→        page: 1,
+   453→      }));
+   454→    }
+   455→  }, [selectedCategoryId]);
+   456→
+   457→  // Fetch categories & brands
+   458→  useEffect(() => {
+   459→    async function fetchData() {
+   460→      try {
+   461→        const [catRes, brandRes] = await Promise.all([
+   462→          fetch('/api/categories'),
+   463→          fetch('/api/brands'),
+   464→        ]);
+   465→        if (catRes.ok) {
+   466→          const catData = await catRes.json();
+   467→          setCategories(catData);
+   468→        }
+   469→        if (brandRes.ok) {
+   470→          const brandData = await brandRes.json();
+   471→          setBrands(brandData);
+   472→        }
+   473→      } catch {
+   474→        // Silently fail — filters just won't show
+   475→      }
+   476→    }
+   477→    fetchData();
+   478→  }, [setCategories, setBrands]);
+   479→
+   480→  // Fetch products based on filters
+   481→  const fetchProducts = useCallback(async () => {
+   482→    setIsLoading(true);
+   483→    try {
+   484→      const params = new URLSearchParams();
+   485→      params.set('page', String(filters.page));
+   486→      params.set('limit', String(PRODUCTS_PER_PAGE));
+   487→      params.set('sort', filters.sort);
+   488→
+   489→      if (filters.search) params.set('search', filters.search);
+   490→      filters.categories.forEach((c) => params.append('categoryId', c));
+   491→      filters.brands.forEach((b) => params.append('brandId', b));
+   492→      if (filters.priceRange[0] > 0) params.set('minPrice', String(filters.priceRange[0]));
+   493→      if (filters.priceRange[1] < MAX_PRICE) params.set('maxPrice', String(filters.priceRange[1]));
+   494→      if (filters.minRating > 0) params.set('rating', String(filters.minRating));
+   495→      if (filters.inStock) params.set('inStock', 'true');
+   496→      if (filters.onSale) params.set('onSale', 'true');
+   497→
+   498→      const res = await fetch(`/api/products?${params.toString()}`);
+   499→      if (res.ok) {
+   500→        const data = await res.json();
+   501→        setProducts(data.products ?? []);
+   502→        setTotalProducts(data.total ?? 0);
+   503→        setTotalPages(data.pages ?? 1);
+   504→      }
+   505→    } catch {
+   506→      // Silently fail
+   507→    } finally {
+   508→      setIsLoading(false);
+   509→    }
+   510→  }, [filters]);
+   511→
+   512→  useEffect(() => {
+   513→    fetchProducts();
+   514→  }, [fetchProducts]);
+   515→
+   516→  const handlePageChange = (page: number) => {
+   517→    setFilters((prev) => ({ ...prev, page }));
+   518→    window.scrollTo({ top: 0, behavior: 'smooth' });
+   519→  };
+   520→
+   521→  const selectedCategoryName = categories.find((c) =>
+   522→    filters.categories.includes(c.id)
+   523→  )?.name;
+   524→
+   525→  const fromIndex = (filters.page - 1) * PRODUCTS_PER_PAGE + 1;
+   526→  const toIndex = Math.min(filters.page * PRODUCTS_PER_PAGE, totalProducts);
+   527→
+   528→  // ─── Filter sidebar for desktop ───
+   529→  const sidebarContent = (
+   530→    <FilterSidebar
+   531→      filters={filters}
+   532→      setFilters={setFilters}
+   533→      categories={categories}
+   534→      brands={brands}
+   535→    />
+   536→  );
+   537→
+   538→  return (
+   539→    <div className="min-h-screen bg-background">
+   540→      <div className="container mx-auto px-4 py-6 max-w-7xl">
+   541→        {/* Breadcrumb */}
+   542→        <Breadcrumb className="mb-6">
+   543→          <BreadcrumbList>
+   544→            <BreadcrumbItem>
+   545→              <BreadcrumbLink
+   546→                href="#"
+   547→                onClick={(e) => { e.preventDefault(); navigate('home'); }}
+   548→                className="hover:text-emerald-700"
+   549→              >
+   550→                Home
+   551→              </BreadcrumbLink>
+   552→            </BreadcrumbItem>
+   553→            <BreadcrumbSeparator />
+   554→            <BreadcrumbItem>
+   555→              {selectedCategoryName ? (
+   556→                <>
+   557→                  <BreadcrumbLink
+   558→                    href="#"
+   559→                    onClick={(e) => { e.preventDefault(); navigate('shop'); }}
+   560→                    className="hover:text-emerald-700"
+   561→                  >
+   562→                    Shop
+   563→                  </BreadcrumbLink>
+   564→                  <BreadcrumbSeparator />
+   565→                  <BreadcrumbPage>{selectedCategoryName}</BreadcrumbPage>
+   566→                </>
+   567→              ) : (
+   568→                <BreadcrumbPage>Shop</BreadcrumbPage>
+   569→              )}
+   570→            </BreadcrumbItem>
+   571→          </BreadcrumbList>
+   572→        </Breadcrumb>
+   573→
+   574→        {/* Page Title */}
+   575→        <div className="mb-6">
+   576→          <h1 className="text-2xl md:text-3xl font-bold">
+   577→            {selectedCategoryName || 'All Products'}
+   578→          </h1>
+   579→          <p className="text-muted-foreground mt-1">
+   580→            {totalProducts > 0 ? (
+   581→              <>Showing <span className="font-medium text-foreground">{fromIndex}–{toIndex}</span> of <span className="font-medium text-foreground">{totalProducts}</span> products</>
+   582→            ) : (
+   583→              'No products found'
+   584→            )}
+   585→          </p>
+   586→        </div>
+   587→
+   588→        <div className="flex gap-6">
+   589→          {/* Desktop Sidebar */}
+   590→          <aside className="hidden lg:block w-64 shrink-0">
+   591→            <div className="sticky top-24">
+   592→              <Card className="p-4">{sidebarContent}</Card>
+   593→            </div>
+   594→          </aside>
+   595→
+   596→          {/* Main Content */}
+   597→          <div className="flex-1 min-w-0 space-y-4">
+   598→            {/* Toolbar */}
+   599→            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+   600→              <div className="flex items-center gap-2">
+   601→                {/* Mobile Filter Button */}
+   602→                <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
+   603→                  <SheetTrigger asChild>
+   604→                    <Button variant="outline" size="sm" className="lg:hidden gap-1.5">
+   605→                      <SlidersHorizontal className="size-4" />
+   606→                      Filters
+   607→                    </Button>
+   608→                  </SheetTrigger>
+   609→                  <SheetContent side="left" className="w-80 overflow-y-auto">
+   610→                    <SheetHeader>
+   611→                      <SheetTitle>Filters</SheetTitle>
+   612→                    </SheetHeader>
+   613→                    <div className="px-4 pb-6 pt-2">
+   614→                      <FilterSidebar
+   615→                        filters={filters}
+   616→                        setFilters={setFilters}
+   617→                        categories={categories}
+   618→                        brands={brands}
+   619→                        onClose={() => setSheetOpen(false)}
+   620→                      />
+   621→                    </div>
+   622→                  </SheetContent>
+   623→                </Sheet>
+   624→
+   625→                {/* Sort */}
+   626→                <Select
+   627→                  value={filters.sort}
+   628→                  onValueChange={(val) =>
+   629→                    setFilters((prev) => ({ ...prev, sort: val as SortOption, page: 1 }))
+   630→                  }
+   631→                >
+   632→                  <SelectTrigger className="w-44">
+   633→                    <SelectValue placeholder="Sort by" />
+   634→                  </SelectTrigger>
+   635→                  <SelectContent>
+   636→                    <SelectItem value="popularity">Popularity</SelectItem>
+   637→                    <SelectItem value="newest">Newest</SelectItem>
+   638→                    <SelectItem value="price-asc">Price: Low to High</SelectItem>
+   639→                    <SelectItem value="price-desc">Price: High to Low</SelectItem>
+   640→                    <SelectItem value="rating">Rating</SelectItem>
+   641→                  </SelectContent>
+   642→                </Select>
+   643→              </div>
+   644→
+   645→              {/* View Mode Toggle */}
+   646→              <div className="flex items-center gap-1 border rounded-md p-0.5">
+   647→                <Button
+   648→                  variant={viewMode === 'grid' ? 'default' : 'ghost'}
+   649→                  size="icon"
+   650→                  className={cn(
+   651→                    'size-8',
+   652→                    viewMode === 'grid' && 'bg-emerald-600 hover:bg-emerald-700 text-white'
+   653→                  )}
+   654→                  onClick={() => setViewMode('grid')}
+   655→                >
+   656→                  <Grid3X3 className="size-4" />
+   657→                </Button>
+   658→                <Button
+   659→                  variant={viewMode === 'list' ? 'default' : 'ghost'}
+   660→                  size="icon"
+   661→                  className={cn(
+   662→                    'size-8',
+   663→                    viewMode === 'list' && 'bg-emerald-600 hover:bg-emerald-700 text-white'
+   664→                  )}
+   665→                  onClick={() => setViewMode('list')}
+   666→                >
+   667→                  <List className="size-4" />
+   668→                </Button>
+   669→              </div>
+   670→            </div>
+   671→
+   672→            {/* Active Filters */}
+   673→            <ActiveFilters
+   674→              filters={filters}
+   675→              setFilters={setFilters}
+   676→              categories={categories}
+   677→              brands={brands}
+   678→            />
+   679→
+   680→            {/* Product Grid / List */}
+   681→            {isLoading ? (
+   682→              <div
+   683→                className={cn(
+   684→                  'grid gap-4',
+   685→                  viewMode === 'grid'
+   686→                    ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3'
+   687→                    : 'grid-cols-1'
+   688→                )}
+   689→              >
+   690→                {Array.from({ length: 6 }, (_, i) => (
+   691→                  <Card key={i} className="overflow-hidden">
+   692→                    <Skeleton className={cn('w-full bg-muted', viewMode === 'grid' ? 'aspect-square' : 'h-48')} />
+   693→                    <div className="p-3 space-y-2">
+   694→                      <Skeleton className="h-3 w-16" />
+   695→                      <Skeleton className="h-4 w-full" />
+   696→                      <Skeleton className="h-3 w-24" />
+   697→                      <Skeleton className="h-5 w-20" />
+   698→                    </div>
+   699→                  </Card>
+   700→                ))}
+   701→              </div>
+   702→            ) : products.length > 0 ? (
+   703→              <div
+   704→                className={cn(
+   705→                  'grid gap-4',
+   706→                  viewMode === 'grid'
+   707→                    ? 'grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4'
+   708→                    : 'grid-cols-1'
+   709→                )}
+   710→              >
+   711→                {products.map((product) => (
+   712→                  <ProductCard
+   713→                    key={product.id}
+   714→                    product={product}
+   715→                    viewMode={viewMode}
+   716→                  />
+   717→                ))}
+   718→              </div>
+   719→            ) : (
+   720→              <div className="flex flex-col items-center justify-center py-20 text-center">
+   721→                <div className="size-16 rounded-full bg-muted flex items-center justify-center mb-4">
+   722→                  <PackageOpen className="size-8 text-muted-foreground" />
+   723→                </div>
+   724→                <h3 className="font-semibold text-lg mb-1">No products found</h3>
+   725→                <p className="text-muted-foreground text-sm max-w-sm">
+   726→                  Try adjusting your filters or search terms to find what you&apos;re looking for.
+   727→                </p>
+   728→                <Button
+   729→                  variant="outline"
+   730→                  className="mt-4"
+   731→                  onClick={() => setFilters(getInitialFilters())}
+   732→                >
+   733→                  Clear All Filters
+   734→                </Button>
+   735→              </div>
+   736→            )}
+   737→
+   738→            {/* Pagination */}
+   739→            {!isLoading && totalPages > 1 && (
+   740→              <div className="pt-6">
+   741→                <Pagination
+   742→                  currentPage={filters.page}
+   743→                  totalPages={totalPages}
+   744→                  onPageChange={handlePageChange}
+   745→                />
+   746→              </div>
+   747→            )}
+   748→          </div>
+   749→        </div>
+   750→      </div>
+   751→    </div>
+   752→  );
+   753→}

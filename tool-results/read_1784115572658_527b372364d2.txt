@@ -1,0 +1,648 @@
+     1→     1→'use client';
+     2→     2→import { useState } from 'react';
+     3→     3→import { useCartStore } from '@/store/use-cart';
+     4→     4→import { useUIStore } from '@/store/use-ui';
+     5→     5→import { useAuthStore } from '@/store/use-auth';
+     6→     6→import { Separator } from '@/components/ui/separator';
+     7→     7→import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbSeparator } from '@/components/ui/breadcrumb';
+     8→     8→import { ArrowLeft, ArrowRight, Check, CreditCard, Truck, Building, Wallet, Smartphone, ShieldCheck } from 'lucide-react';
+     9→     9→import { toast } from 'sonner';
+    10→    10→import type { Address } from '@/types';
+    11→    11→
+    12→    12→const formatPrice = (price: number) => '৳' + price.toLocaleString();
+    13→    13→
+    14→    14→const STEPS = [
+    15→    15→  { id: 1, label: 'Shipping', icon: Truck },
+    16→    16→  { id: 2, label: 'Payment', icon: CreditCard },
+    17→    17→  { id: 3, label: 'Review', icon: Check },
+    18→    18→] as const;
+    19→    19→
+    20→    20→const PAYMENT_METHODS = [
+    21→    21→  { id: 'cod', label: 'Cash on Delivery', description: 'Pay when you receive your order', icon: Wallet },
+    22→    22→  { id: 'bkash', label: 'bKash', description: 'Mobile banking payment via bKash', icon: Smartphone },
+    23→    23→  { id: 'nagad', label: 'Nagad', description: 'Mobile financial service via Nagad', icon: Smartphone },
+    24→    24→  { id: 'bank_transfer', label: 'Bank Transfer', description: 'Direct bank transfer to our account', icon: Building },
+    25→    25→  { id: 'card', label: 'Card Payment', description: 'Credit or debit card payment', icon: CreditCard },
+    26→    26→] as const;
+    27→    27→
+    28→    28→interface ShippingForm {
+    29→    29→  fullName: string;
+    30→    30→  phone: string;
+    31→    31→  address: string;
+    32→    32→  city: string;
+    33→    33→  state: string;
+    34→    34→  zipCode: string;
+    35→    35→  country: string;
+    36→    36→}
+    37→    37→
+    38→    38→const defaultShippingForm: ShippingForm = {
+    39→    39→  fullName: '',
+    40→    40→  phone: '',
+    41→    41→  address: '',
+    42→    42→  city: '',
+    43→    43→  state: '',
+    44→    44→  zipCode: '',
+    45→    45→  country: 'Bangladesh',
+    46→    46→};
+    47→    47→
+    48→    48→const inputClass = (error?: string) =>
+    49→    49→  `input-elegant mt-1.5 w-full h-11 rounded-xl border bg-transparent px-4 text-sm outline-none ${error ? 'border-red-500' : 'border-border/50 bg-muted/20'}`;
+    50→    50→
+    51→    51→export default function CheckoutPage() {
+    52→    52→  const { items, getSubtotal, getTotalSavings, appliedCoupon, couponDiscount, clearCart } = useCartStore();
+    53→    53→  const { navigate, addresses } = useUIStore();
+    54→    54→  const { user, isAuthenticated } = useAuthStore();
+    55→    55→
+    56→    56→  const [step, setStep] = useState(1);
+    57→    57→  const [shippingForm, setShippingForm] = useState<ShippingForm>(defaultShippingForm);
+    58→    58→  const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
+    59→    59→  const [paymentMethod, setPaymentMethod] = useState('cod');
+    60→    60→  const [agreeTerms, setAgreeTerms] = useState(false);
+    61→    61→  const [errors, setErrors] = useState<Partial<Record<keyof ShippingForm, string>>>({});
+    62→    62→  const [placingOrder, setPlacingOrder] = useState(false);
+    63→    63→  const [orderSuccess, setOrderSuccess] = useState(false);
+    64→    64→
+    65→    65→  const subtotal = getSubtotal();
+    66→    66→  const savings = getTotalSavings();
+    67→    67→  const shipping = subtotal >= 2000 ? 0 : 60;
+    68→    68→  const total = subtotal - couponDiscount + shipping;
+    69→    69→
+    70→    70→  const validateShipping = (): boolean => {
+    71→    71→    const newErrors: Partial<Record<keyof ShippingForm, string>> = {};
+    72→    72→    if (!shippingForm.fullName.trim()) newErrors.fullName = 'Full name is required';
+    73→    73→    if (!shippingForm.phone.trim()) newErrors.phone = 'Phone number is required';
+    74→    74→    else if (!/^(?:\+880|01)\d{9,10}$/.test(shippingForm.phone.trim())) newErrors.phone = 'Enter a valid BD phone number';
+    75→    75→    if (!shippingForm.address.trim()) newErrors.address = 'Address is required';
+    76→    76→    if (!shippingForm.city.trim()) newErrors.city = 'City is required';
+    77→    77→    if (!shippingForm.zipCode.trim()) newErrors.zipCode = 'Zip code is required';
+    78→    78→    setErrors(newErrors);
+    79→    79→    return Object.keys(newErrors).length === 0;
+    80→    80→  };
+    81→    81→
+    82→    82→  const handleNext = () => {
+    83→    83→    if (step === 1) {
+    84→    84→      if (!validateShipping()) {
+    85→    85→        toast.error('Please fill in all required fields');
+    86→    86→        return;
+    87→    87→      }
+    88→    88→      setStep(2);
+    89→    89→    } else if (step === 2) {
+    90→    90→      setStep(3);
+    91→    91→    }
+    92→    92→  };
+    93→    93→
+    94→    94→  const handleBack = () => {
+    95→    95→    if (step > 1) setStep(step - 1);
+    96→    96→  };
+    97→    97→
+    98→    98→  const handleSelectAddress = (addr: Address) => {
+    99→    99→    setSelectedAddressId(addr.id);
+   100→   100→    setShippingForm({
+   101→   101→      fullName: addr.fullName,
+   102→   102→      phone: addr.phone,
+   103→   103→      address: addr.address,
+   104→   104→      city: addr.city,
+   105→   105→      state: addr.state || '',
+   106→   106→      zipCode: addr.zipCode || '',
+   107→   107→      country: addr.country,
+   108→   108→    });
+   109→   109→    setErrors({});
+   110→   110→  };
+   111→   111→
+   112→   112→  const handlePlaceOrder = async () => {
+   113→   113→    if (!agreeTerms) {
+   114→   114→      toast.error('Please agree to the Terms & Conditions');
+   115→   115→      return;
+   116→   116→    }
+   117→   117→    setPlacingOrder(true);
+   118→   118→    try {
+   119→   119→      const res = await fetch('/api/orders', {
+   120→   120→        method: 'POST',
+   121→   121→        headers: { 'Content-Type': 'application/json' },
+   122→   122→        body: JSON.stringify({
+   123→   123→          items: items.map((item) => ({
+   124→   124→            productId: item.product.id,
+   125→   125→            quantity: item.quantity,
+   126→   126→            variantId: item.variantId,
+   127→   127→            variantName: item.variantName,
+   128→   128→            price: item.product.discountPrice ?? item.product.price,
+   129→   129→            name: item.product.name,
+   130→   130→            image: item.product.images?.[0]?.url,
+   131→   131→          })),
+   132→   132→          shippingAddress: shippingForm,
+   133→   133→          paymentMethod,
+   134→   134→          couponCode: appliedCoupon?.code,
+   135→   135→          subtotal,
+   136→   136→          discount: couponDiscount,
+   137→   137→          shippingCharge: shipping,
+   138→   138→          total,
+   139→   139→        }),
+   140→   140→      });
+   141→   141→      if (res.ok) {
+   142→   142→        setOrderSuccess(true);
+   143→   143→        clearCart();
+   144→   144→        toast.success('Order placed successfully!');
+   145→   145→      } else {
+   146→   146→        const err = await res.json();
+   147→   147→        toast.error(err.error || 'Failed to place order');
+   148→   148→      }
+   149→   149→    } catch {
+   150→   150→      toast.error('Something went wrong. Please try again.');
+   151→   151→    } finally {
+   152→   152→      setPlacingOrder(false);
+   153→   153→    }
+   154→   154→  };
+   155→   155→
+   156→   156→  const selectedPayment = PAYMENT_METHODS.find((m) => m.id === paymentMethod);
+   157→   157→
+   158→   158→  // Order Success Screen
+   159→   159→  if (orderSuccess) {
+   160→   160→    return (
+   161→   161→      <div className="max-w-lg mx-auto px-4 py-16 text-center">
+   162→   162→        <div className="w-20 h-20 rounded-full bg-[#5B7553]/10 flex items-center justify-center mx-auto mb-6">
+   163→   163→          <Check className="h-10 w-10 text-[#5B7553]" />
+   164→   164→        </div>
+   165→   165→        <h2 className="text-2xl sm:text-3xl font-medium tracking-tight text-foreground mb-3">Order Placed Successfully!</h2>
+   166→   166→        <p className="text-muted-foreground font-light text-sm mb-2">
+   167→   167→          Thank you for your purchase. Your order has been received and is being processed.
+   168→   168→        </p>
+   169→   169→        <p className="text-sm text-muted-foreground font-light mb-8">
+   170→   170→          You can track your order status from your orders page.
+   171→   171→        </p>
+   172→   172→        <div className="flex flex-col sm:flex-row gap-3 justify-center">
+   173→   173→          <button
+   174→   174→            onClick={() => navigate('orders')}
+   175→   175→            className="bg-foreground text-background hover:bg-foreground/90 h-11 px-6 rounded-full text-sm font-medium transition-all duration-300"
+   176→   176→          >
+   177→   177→            View Orders
+   178→   178→          </button>
+   179→   179→          <button
+   180→   180→            onClick={() => navigate('home')}
+   181→   181→            className="border border-border hover:bg-accent h-11 px-6 rounded-full text-sm font-medium transition-all duration-200"
+   182→   182→          >
+   183→   183→            Continue Shopping
+   184→   184→          </button>
+   185→   185→        </div>
+   186→   186→      </div>
+   187→   187→    );
+   188→   188→  }
+   189→   189→
+   190→   190→  if (items.length === 0 && !orderSuccess) {
+   191→   191→    return (
+   192→   192→      <div className="max-w-lg mx-auto px-4 py-16 text-center">
+   193→   193→        <h2 className="text-xl font-medium text-foreground mb-3">Your cart is empty</h2>
+   194→   194→        <p className="text-muted-foreground font-light text-sm mb-6">Add some items to your cart before checking out.</p>
+   195→   195→        <button onClick={() => navigate('shop')} className="bg-foreground text-background hover:bg-foreground/90 h-11 px-6 rounded-full text-sm font-medium transition-all duration-300">
+   196→   196→          Go to Shop
+   197→   197→        </button>
+   198→   198→      </div>
+   199→   199→    );
+   200→   200→  }
+   201→   201→
+   202→   202→  return (
+   203→   203→    <div className="max-w-6xl mx-auto px-4 py-6">
+   204→   204→      {/* Breadcrumb */}
+   205→   205→      <Breadcrumb className="mb-6">
+   206→   206→        <BreadcrumbList>
+   207→   207→          <BreadcrumbItem>
+   208→   208→            <BreadcrumbLink
+   209→   209→              onClick={() => navigate('home')}
+   210→   210→              className="cursor-pointer text-muted-foreground hover:text-foreground transition-colors"
+   211→   211→            >
+   212→   212→              Home
+   213→   213→            </BreadcrumbLink>
+   214→   214→          </BreadcrumbItem>
+   215→   215→          <BreadcrumbSeparator />
+   216→   216→          <BreadcrumbItem>
+   217→   217→            <BreadcrumbLink
+   218→   218→              onClick={() => navigate('cart')}
+   219→   219→              className="cursor-pointer text-muted-foreground hover:text-foreground transition-colors"
+   220→   220→            >
+   221→   221→              Cart
+   222→   222→            </BreadcrumbLink>
+   223→   223→          </BreadcrumbItem>
+   224→   224→          <BreadcrumbSeparator />
+   225→   225→          <BreadcrumbItem>
+   226→   226→            <span className="text-foreground font-medium">Checkout</span>
+   227→   227→          </BreadcrumbItem>
+   228→   228→        </BreadcrumbList>
+   229→   229→      </Breadcrumb>
+   230→   230→
+   231→   231→      <h1 className="text-2xl sm:text-3xl font-medium tracking-tight text-foreground mb-8">Checkout</h1>
+   232→   232→
+   233→   233→      {/* Step Indicator */}
+   234→   234→      <div className="flex items-center justify-center mb-10">
+   235→   235→        {STEPS.map((s, idx) => {
+   236→   236→          const Icon = s.icon;
+   237→   237→          const isActive = step === s.id;
+   238→   238→          const isCompleted = step > s.id;
+   239→   239→          return (
+   240→   240→            <div key={s.id} className="flex items-center">
+   241→   241→              <div className="flex flex-col items-center gap-2">
+   242→   242→                <div
+   243→   243→                  className={`w-10 h-10 rounded-full flex items-center justify-center transition-all duration-300 ${
+   244→   244→                    isCompleted
+   245→   245→                      ? 'bg-foreground text-background'
+   246→   246→                      : isActive
+   247→   247→                        ? 'bg-foreground text-background'
+   248→   248→                        : 'bg-muted text-muted-foreground'
+   249→   249→                  }`}
+   250→   250→                >
+   251→   251→                  {isCompleted ? (
+   252→   252→                    <Check className="h-5 w-5" />
+   253→   253→                  ) : (
+   254→   254→                    <Icon className="h-4.5 w-4.5" />
+   255→   255→                  )}
+   256→   256→                </div>
+   257→   257→                <span
+   258→   258→                  className={`text-xs font-medium hidden sm:block ${
+   259→   259→                    isActive || isCompleted ? 'text-foreground' : 'text-muted-foreground'
+   260→   260→                  }`}
+   261→   261→                >
+   262→   262→                  {s.label}
+   263→   263→                </span>
+   264→   264→              </div>
+   265→   265→              {idx < STEPS.length - 1 && (
+   266→   266→                <div
+   267→   267→                  className={`w-12 sm:w-24 h-px mx-3 mb-5 sm:mb-0 transition-colors duration-300 ${
+   268→   268→                    step > s.id ? 'bg-foreground' : 'bg-border'
+   269→   269→                  }`}
+   270→   270→                />
+   271→   271→              )}
+   272→   272→            </div>
+   273→   273→          );
+   274→   274→        })}
+   275→   275→      </div>
+   276→   276→
+   277→   277→      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+   278→   278→        {/* Main Content */}
+   279→   279→        <div className="lg:col-span-2">
+   280→   280→          {/* Step 1: Shipping Address */}
+   281→   281→          {step === 1 && (
+   282→   282→            <div className="rounded-xl border border-border/50 p-6">
+   283→   283→              <h2 className="text-base font-medium tracking-tight flex items-center gap-2.5 mb-6">
+   284→   284→                <Truck className="h-5 w-5 text-muted-foreground" />
+   285→   285→                Shipping Address
+   286→   286→              </h2>
+   287→   287→              <div className="space-y-6">
+   288→   288→                {/* Saved Addresses */}
+   289→   289→                {isAuthenticated && addresses.length > 0 && (
+   290→   290→                  <div>
+   291→   291→                    <label className="text-sm font-medium mb-3 block">Saved Addresses</label>
+   292→   292→                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+   293→   293→                      {addresses.map((addr) => (
+   294→   294→                        <button
+   295→   295→                          key={addr.id}
+   296→   296→                          type="button"
+   297→   297→                          onClick={() => handleSelectAddress(addr)}
+   298→   298→                          className={`text-left p-4 rounded-xl border-2 transition-all duration-200 hover:border-foreground/30 ${
+   299→   299→                            selectedAddressId === addr.id
+   300→   300→                              ? 'border-foreground bg-foreground/[0.03]'
+   301→   301→                              : 'border-border/50'
+   302→   302→                          }`}
+   303→   303→                        >
+   304→   304→                          {addr.isDefault && (
+   305→   305→                            <span className="bg-muted text-foreground text-[10px] px-2 py-0.5 rounded-full inline-block mb-2 font-medium">
+   306→   306→                              Default
+   307→   307→                            </span>
+   308→   308→                          )}
+   309→   309→                          <p className="font-medium text-sm text-foreground">{addr.fullName}</p>
+   310→   310→                          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2 font-light">{addr.address}, {addr.city}</p>
+   311→   311→                          <p className="text-xs text-muted-foreground">{addr.phone}</p>
+   312→   312→                        </button>
+   313→   313→                      ))}
+   314→   314→                    </div>
+   315→   315→                    <Separator className="my-5" />
+   316→   316→                  </div>
+   317→   317→                )}
+   318→   318→
+   319→   319→                {/* Shipping Form */}
+   320→   320→                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+   321→   321→                  <div className="sm:col-span-2">
+   322→   322→                    <label htmlFor="fullName" className="text-sm font-medium">Full Name *</label>
+   323→   323→                    <input
+   324→   324→                      id="fullName"
+   325→   325→                      value={shippingForm.fullName}
+   326→   326→                      onChange={(e) => { setShippingForm({ ...shippingForm, fullName: e.target.value }); setErrors({ ...errors, fullName: undefined }); }}
+   327→   327→                      placeholder="John Doe"
+   328→   328→                      className={inputClass(errors.fullName)}
+   329→   329→                    />
+   330→   330→                    {errors.fullName && <p className="text-xs text-red-500 mt-1">{errors.fullName}</p>}
+   331→   331→                  </div>
+   332→   332→                  <div className="sm:col-span-2">
+   333→   333→                    <label htmlFor="phone" className="text-sm font-medium">Phone Number *</label>
+   334→   334→                    <input
+   335→   335→                      id="phone"
+   336→   336→                      value={shippingForm.phone}
+   337→   337→                      onChange={(e) => { setShippingForm({ ...shippingForm, phone: e.target.value }); setErrors({ ...errors, phone: undefined }); }}
+   338→   338→                      placeholder="01XXXXXXXXX"
+   339→   339→                      className={inputClass(errors.phone)}
+   340→   340→                    />
+   341→   341→                    {errors.phone && <p className="text-xs text-red-500 mt-1">{errors.phone}</p>}
+   342→   342→                  </div>
+   343→   343→                  <div className="sm:col-span-2">
+   344→   344→                    <label htmlFor="address" className="text-sm font-medium">Address *</label>
+   345→   345→                    <input
+   346→   346→                      id="address"
+   347→   347→                      value={shippingForm.address}
+   348→   348→                      onChange={(e) => { setShippingForm({ ...shippingForm, address: e.target.value }); setErrors({ ...errors, address: undefined }); }}
+   349→   349→                      placeholder="House No, Road, Area"
+   350→   350→                      className={inputClass(errors.address)}
+   351→   351→                    />
+   352→   352→                    {errors.address && <p className="text-xs text-red-500 mt-1">{errors.address}</p>}
+   353→   353→                  </div>
+   354→   354→                  <div>
+   355→   355→                    <label htmlFor="city" className="text-sm font-medium">City *</label>
+   356→   356→                    <input
+   357→   357→                      id="city"
+   358→   358→                      value={shippingForm.city}
+   359→   359→                      onChange={(e) => { setShippingForm({ ...shippingForm, city: e.target.value }); setErrors({ ...errors, city: undefined }); }}
+   360→   360→                      placeholder="Dhaka"
+   361→   361→                      className={inputClass(errors.city)}
+   362→   362→                    />
+   363→   363→                    {errors.city && <p className="text-xs text-red-500 mt-1">{errors.city}</p>}
+   364→   364→                  </div>
+   365→   365→                  <div>
+   366→   366→                    <label htmlFor="state" className="text-sm font-medium">State / Division</label>
+   367→   367→                    <input
+   368→   368→                      id="state"
+   369→   369→                      value={shippingForm.state}
+   370→   370→                      onChange={(e) => setShippingForm({ ...shippingForm, state: e.target.value })}
+   371→   371→                      placeholder="Dhaka Division"
+   372→   372→                      className={inputClass()}
+   373→   373→                    />
+   374→   374→                  </div>
+   375→   375→                  <div>
+   376→   376→                    <label htmlFor="zipCode" className="text-sm font-medium">Zip Code *</label>
+   377→   377→                    <input
+   378→   378→                      id="zipCode"
+   379→   379→                      value={shippingForm.zipCode}
+   380→   380→                      onChange={(e) => { setShippingForm({ ...shippingForm, zipCode: e.target.value }); setErrors({ ...errors, zipCode: undefined }); }}
+   381→   381→                      placeholder="1205"
+   382→   382→                      className={inputClass(errors.zipCode)}
+   383→   383→                    />
+   384→   384→                    {errors.zipCode && <p className="text-xs text-red-500 mt-1">{errors.zipCode}</p>}
+   385→   385→                  </div>
+   386→   386→                  <div>
+   387→   387→                    <label htmlFor="country" className="text-sm font-medium">Country</label>
+   388→   388→                    <input
+   389→   389→                      id="country"
+   390→   390→                      value={shippingForm.country}
+   391→   391→                      onChange={(e) => setShippingForm({ ...shippingForm, country: e.target.value })}
+   392→   392→                      placeholder="Bangladesh"
+   393→   393→                      className={inputClass()}
+   394→   394→                    />
+   395→   395→                  </div>
+   396→   396→                </div>
+   397→   397→
+   398→   398→                <div className="flex justify-end pt-2">
+   399→   399→                  <button
+   400→   400→                    onClick={handleNext}
+   401→   401→                    className="bg-foreground text-background hover:bg-foreground/90 h-11 px-6 rounded-full text-sm font-medium transition-all duration-300 inline-flex items-center gap-2"
+   402→   402→                  >
+   403→   403→                    Continue to Payment
+   404→   404→                    <ArrowRight className="h-4 w-4" />
+   405→   405→                  </button>
+   406→   406→                </div>
+   407→   407→              </div>
+   408→   408→            </div>
+   409→   409→          )}
+   410→   410→
+   411→   411→          {/* Step 2: Payment Method */}
+   412→   412→          {step === 2 && (
+   413→   413→            <div className="rounded-xl border border-border/50 p-6">
+   414→   414→              <h2 className="text-base font-medium tracking-tight flex items-center gap-2.5 mb-6">
+   415→   415→                <CreditCard className="h-5 w-5 text-muted-foreground" />
+   416→   416→                Payment Method
+   417→   417→              </h2>
+   418→   418→              <div className="space-y-3">
+   419→   419→                {PAYMENT_METHODS.map((method) => {
+   420→   420→                  const Icon = method.icon;
+   421→   421→                  return (
+   422→   422→                    <label
+   423→   423→                      key={method.id}
+   424→   424→                      htmlFor={`payment-${method.id}`}
+   425→   425→                      className={`flex items-center gap-4 p-4 rounded-xl border-2 cursor-pointer transition-all duration-200 hover:border-foreground/30 ${
+   426→   426→                        paymentMethod === method.id
+   427→   427→                          ? 'border-foreground bg-foreground/[0.03]'
+   428→   428→                          : 'border-border/50'
+   429→   429→                      }`}
+   430→   430→                    >
+   431→   431→                      <input
+   432→   432→                        type="radio"
+   433→   433→                        name="paymentMethod"
+   434→   434→                        value={method.id}
+   435→   435→                        checked={paymentMethod === method.id}
+   436→   436→                        onChange={() => setPaymentMethod(method.id)}
+   437→   437→                        id={`payment-${method.id}`}
+   438→   438→                        className="sr-only"
+   439→   439→                      />
+   440→   440→                      <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${
+   441→   441→                        paymentMethod === method.id ? 'bg-foreground text-background' : 'bg-muted/50 text-muted-foreground'
+   442→   442→                      }`}>
+   443→   443→                        <Icon className="h-5 w-5" />
+   444→   444→                      </div>
+   445→   445→                      <div className="flex-1">
+   446→   446→                        <p className="font-medium text-sm text-foreground">{method.label}</p>
+   447→   447→                        <p className="text-xs text-muted-foreground font-light">{method.description}</p>
+   448→   448→                      </div>
+   449→   449→                      {paymentMethod === method.id && (
+   450→   450→                        <Check className="h-5 w-5 text-foreground flex-shrink-0" />
+   451→   451→                      )}
+   452→   452→                    </label>
+   453→   453→                  );
+   454→   454→                })}
+   455→   455→              </div>
+   456→   456→
+   457→   457→              <div className="flex items-center justify-between pt-6">
+   458→   458→                <button
+   459→   459→                  onClick={handleBack}
+   460→   460→                  className="border border-border hover:bg-accent h-11 px-5 rounded-full text-sm font-medium transition-all duration-200 inline-flex items-center gap-2"
+   461→   461→                >
+   462→   462→                  <ArrowLeft className="h-4 w-4" />
+   463→   463→                  Back
+   464→   464→                </button>
+   465→   465→                <button
+   466→   466→                  onClick={handleNext}
+   467→   467→                  className="bg-foreground text-background hover:bg-foreground/90 h-11 px-6 rounded-full text-sm font-medium transition-all duration-300 inline-flex items-center gap-2"
+   468→   468→                >
+   469→   469→                  Review Order
+   470→   470→                  <ArrowRight className="h-4 w-4" />
+   471→   471→                </button>
+   472→   472→              </div>
+   473→   473→            </div>
+   474→   474→          )}
+   475→   475→
+   476→   476→          {/* Step 3: Order Review */}
+   477→   477→          {step === 3 && (
+   478→   478→            <div className="space-y-5">
+   479→   479→              {/* Items */}
+   480→   480→              <div className="rounded-xl border border-border/50 p-6">
+   481→   481→                <h3 className="text-base font-medium tracking-tight mb-4">Order Items ({items.length})</h3>
+   482→   482→                <div className="space-y-3">
+   483→   483→                  {items.map((item) => {
+   484→   484→                    const price = item.product.discountPrice ?? item.product.price;
+   485→   485→                    const image = item.product.images?.[0]?.url || '/placeholder.png';
+   486→   486→                    return (
+   487→   487→                      <div key={item.product.id + (item.variantId || '')} className="flex gap-3">
+   488→   488→                        <div className="w-14 h-14 rounded-xl overflow-hidden bg-muted/30 flex-shrink-0">
+   489→   489→                          <img src={image} alt={item.product.name} className="w-full h-full object-cover" />
+   490→   490→                        </div>
+   491→   491→                        <div className="flex-1 min-w-0">
+   492→   492→                          <p className="text-sm font-medium text-foreground truncate">{item.product.name}</p>
+   493→   493→                          {item.variantName && (
+   494→   494→                            <p className="text-xs text-muted-foreground font-light">{item.variantName}</p>
+   495→   495→                          )}
+   496→   496→                          <p className="text-xs text-muted-foreground font-light mt-0.5">Qty: {item.quantity} × {formatPrice(price)}</p>
+   497→   497→                        </div>
+   498→   498→                        <span className="text-sm font-medium text-foreground flex-shrink-0">
+   499→   499→                          {formatPrice(price * item.quantity)}
+   500→   500→                        </span>
+   501→   501→                      </div>
+   502→   502→                    );
+   503→   503→                  })}
+   504→   504→                </div>
+   505→   505→              </div>
+   506→   506→
+   507→   507→              {/* Shipping Address Summary */}
+   508→   508→              <div className="rounded-xl border border-border/50 p-6">
+   509→   509→                <h3 className="text-base font-medium tracking-tight mb-3 flex items-center gap-2.5">
+   510→   510→                  <Truck className="h-4 w-4 text-muted-foreground" />
+   511→   511→                  Shipping Address
+   512→   512→                </h3>
+   513→   513→                <div className="text-sm font-light">
+   514→   514→                  <p className="font-medium">{shippingForm.fullName}</p>
+   515→   515→                  <p className="text-muted-foreground">{shippingForm.phone}</p>
+   516→   516→                  <p className="text-muted-foreground">{shippingForm.address}</p>
+   517→   517→                  <p className="text-muted-foreground">
+   518→   518→                    {shippingForm.city}{shippingForm.state ? `, ${shippingForm.state}` : ''} {shippingForm.zipCode}
+   519→   519→                  </p>
+   520→   520→                  <p className="text-muted-foreground">{shippingForm.country}</p>
+   521→   521→                </div>
+   522→   522→              </div>
+   523→   523→
+   524→   524→              {/* Payment Method Summary */}
+   525→   525→              <div className="rounded-xl border border-border/50 p-6">
+   526→   526→                <h3 className="text-base font-medium tracking-tight mb-3 flex items-center gap-2.5">
+   527→   527→                  <CreditCard className="h-4 w-4 text-muted-foreground" />
+   528→   528→                  Payment Method
+   529→   529→                </h3>
+   530→   530→                <div>
+   531→   531→                  <p className="text-sm font-medium">{selectedPayment?.label}</p>
+   532→   532→                  <p className="text-xs text-muted-foreground font-light">{selectedPayment?.description}</p>
+   533→   533→                </div>
+   534→   534→              </div>
+   535→   535→
+   536→   536→              {/* Terms & Place Order */}
+   537→   537→              <div className="space-y-5">
+   538→   538→                <div className="flex items-start gap-3">
+   539→   539→                  <input
+   540→   540→                    type="checkbox"
+   541→   541→                    id="terms"
+   542→   542→                    checked={agreeTerms}
+   543→   543→                    onChange={(e) => setAgreeTerms(e.target.checked === true)}
+   544→   544→                    className="mt-0.5 rounded border-border h-4 w-4"
+   545→   545→                  />
+   546→   546→                  <label htmlFor="terms" className="text-sm text-muted-foreground leading-relaxed cursor-pointer font-light">
+   547→   547→                    I agree to the <span className="text-foreground font-medium cursor-pointer hover:underline">Terms & Conditions</span> and{' '}
+   548→   548→                    <span className="text-foreground font-medium cursor-pointer hover:underline">Privacy Policy</span>
+   549→   549→                  </label>
+   550→   550→                </div>
+   551→   551→
+   552→   552→                <div className="flex items-center gap-3 p-4 rounded-xl bg-muted/20 border border-border/50">
+   553→   553→                  <ShieldCheck className="h-5 w-5 text-muted-foreground flex-shrink-0" />
+   554→   554→                  <p className="text-xs text-muted-foreground font-light">
+   555→   555→                    Your payment information is secure and encrypted. We never store your card details.
+   556→   556→                  </p>
+   557→   557→                </div>
+   558→   558→
+   559→   559→                <div className="flex items-center justify-between pt-2">
+   560→   560→                  <button
+   561→   561→                    onClick={handleBack}
+   562→   562→                    className="border border-border hover:bg-accent h-11 px-5 rounded-full text-sm font-medium transition-all duration-200 inline-flex items-center gap-2"
+   563→   563→                  >
+   564→   564→                    <ArrowLeft className="h-4 w-4" />
+   565→   565→                    Back
+   566→   566→                  </button>
+   567→   567→                  <button
+   568→   568→                    onClick={handlePlaceOrder}
+   569→   569→                    disabled={placingOrder || !agreeTerms}
+   570→   570→                    className="bg-foreground text-background hover:bg-foreground/90 h-12 w-full sm:w-auto px-8 rounded-full text-sm font-medium transition-all duration-300 disabled:opacity-50 inline-flex items-center justify-center gap-2"
+   571→   571→                  >
+   572→   572→                    {placingOrder ? (
+   573→   573→                      <>
+   574→   574→                        <span className="h-4 w-4 animate-spin rounded-full border-2 border-background border-t-transparent" />
+   575→   575→                        Placing Order...
+   576→   576→                      </>
+   577→   577→                    ) : (
+   578→   578→                      <>
+   579→   579→                        Place Order
+   580→   580→                        <ArrowRight className="h-4 w-4" />
+   581→   581→                      </>
+   582→   582→                    )}
+   583→   583→                  </button>
+   584→   584→                </div>
+   585→   585→              </div>
+   586→   586→            </div>
+   587→   587→          )}
+   588→   588→        </div>
+   589→   589→
+   590→   590→        {/* Order Summary Sidebar */}
+   591→   591→        <div className="lg:col-span-1">
+   592→   592→          <div className="rounded-xl border border-border/50 p-6 sticky top-4">
+   593→   593→            <h2 className="text-base font-medium tracking-tight mb-5">Order Summary</h2>
+   594→   594→            <div className="space-y-4 text-sm font-light">
+   595→   595→              <div className="space-y-2.5 max-h-48 overflow-y-auto">
+   596→   596→                {items.map((item) => {
+   597→   597→                  const price = item.product.discountPrice ?? item.product.price;
+   598→   598→                  return (
+   599→   599→                    <div key={item.product.id + (item.variantId || '')} className="flex justify-between gap-2">
+   600→   600→                      <span className="text-muted-foreground truncate flex-1">
+   601→   601→                        {item.product.name} × {item.quantity}
+   602→   602→                      </span>
+   603→   603→                      <span className="font-medium flex-shrink-0">{formatPrice(price * item.quantity)}</span>
+   604→   604→                    </div>
+   605→   605→                  );
+   606→   606→                })}
+   607→   607→              </div>
+   608→   608→
+   609→   609→              <Separator />
+   610→   610→
+   611→   611→              <div className="space-y-2.5">
+   612→   612→                <div className="flex justify-between">
+   613→   613→                  <span className="text-muted-foreground">Subtotal</span>
+   614→   614→                  <span className="font-medium">{formatPrice(subtotal)}</span>
+   615→   615→                </div>
+   616→   616→                {savings > 0 && (
+   617→   617→                  <div className="flex justify-between text-muted-foreground">
+   618→   618→                    <span>Savings</span>
+   619→   619→                    <span>-{formatPrice(savings)}</span>
+   620→   620→                  </div>
+   621→   621→                )}
+   622→   622→                {couponDiscount > 0 && (
+   623→   623→                  <div className="flex justify-between text-muted-foreground">
+   624→   624→                    <span>Discount ({appliedCoupon?.code})</span>
+   625→   625→                    <span>-{formatPrice(couponDiscount)}</span>
+   626→   626→                  </div>
+   627→   627→                )}
+   628→   628→                <div className="flex justify-between">
+   629→   629→                  <span className="text-muted-foreground">Shipping</span>
+   630→   630→                  <span className="font-medium">
+   631→   631→                    {shipping === 0 ? 'Free' : formatPrice(shipping)}
+   632→   632→                  </span>
+   633→   633→                </div>
+   634→   634→              </div>
+   635→   635→
+   636→   636→              <Separator />
+   637→   637→
+   638→   638→              <div className="flex justify-between text-lg font-medium">
+   639→   639→                <span>Total</span>
+   640→   640→                <span className="text-foreground">{formatPrice(total)}</span>
+   641→   641→              </div>
+   642→   642→            </div>
+   643→   643→          </div>
+   644→   644→        </div>
+   645→   645→      </div>
+   646→   646→    </div>
+   647→   647→  );
+   648→   648→}

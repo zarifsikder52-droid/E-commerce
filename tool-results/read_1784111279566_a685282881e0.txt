@@ -1,0 +1,860 @@
+     1→     1→'use client';
+     2→     2→
+     3→     3→import { useEffect, useState, useRef } from 'react';
+     4→     4→import { useUIStore } from '@/store/use-ui';
+     5→     5→import { useCartStore } from '@/store/use-cart';
+     6→     6→import { useWishlistStore } from '@/store/use-wishlist';
+     7→     7→import { Separator } from '@/components/ui/separator';
+     8→     8→import {
+     9→     9→  Breadcrumb,
+    10→    10→  BreadcrumbItem,
+    11→    11→  BreadcrumbLink,
+    12→    12→  BreadcrumbList,
+    13→    13→  BreadcrumbSeparator,
+    14→    14→  BreadcrumbPage,
+    15→    15→} from '@/components/ui/breadcrumb';
+    16→    16→import { Textarea } from '@/components/ui/textarea';
+    17→    17→import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+    18→    18→import { Skeleton } from '@/components/ui/skeleton';
+    19→    19→import {
+    20→    20→  Star,
+    21→    21→  Heart,
+    22→    22→  ShoppingCart,
+    23→    23→  Minus,
+    24→    24→  Plus,
+    25→    25→  Truck,
+    26→    26→  Shield,
+    27→    27→  RotateCcw,
+    28→    28→  Share2,
+    29→    29→  ChevronRight,
+    30→    30→  Check,
+    31→    31→  Package,
+    32→    32→} from 'lucide-react';
+    33→    33→import { cn, formatPrice } from '@/lib/utils';
+    34→    34→import ProductCard from './ProductCard';
+    35→    35→import type { Product, Review } from '@/types';
+    36→    36→
+    37→    37→// ─── Star Rating Input ──────────────────────────────────────────────────
+    38→    38→
+    39→    39→function StarRatingInput({
+    40→    40→  value,
+    41→    41→  onChange,
+    42→    42→  readonly = false,
+    43→    43→  size = 'md',
+    44→    44→}: {
+    45→    45→  value: number;
+    46→    46→  onChange?: (v: number) => void;
+    47→    47→  readonly?: boolean;
+    48→    48→  size?: 'sm' | 'md' | 'lg';
+    49→    49→}) {
+    50→    50→  const sizeClass = size === 'lg' ? 'size-6' : size === 'sm' ? 'size-3.5' : 'size-5';
+    51→    51→  const [hover, setHover] = useState(0);
+    52→    52→
+    53→    53→  return (
+    54→    54→    <div className="flex items-center gap-0.5">
+    55→    55→      {Array.from({ length: 5 }, (_, i) => {
+    56→    56→        const starVal = i + 1;
+    57→    57→        const filled = starVal <= (hover || value);
+    58→    58→        return (
+    59→    59→          <button
+    60→    60→            key={i}
+    61→    61→            type="button"
+    62→    62→            disabled={readonly}
+    63→    63→            className={cn(
+    64→    64→              'transition-colors',
+    65→    65→              !readonly && 'cursor-pointer hover:scale-110',
+    66→    66→              readonly && 'cursor-default'
+    67→    67→            )}
+    68→    68→            onMouseEnter={() => !readonly && setHover(starVal)}
+    69→    69→            onMouseLeave={() => !readonly && setHover(0)}
+    70→    70→            onClick={() => onChange?.(starVal)}
+    71→    71→          >
+    72→    72→            <Star
+    73→    73→              className={cn(
+    74→    74→                sizeClass,
+    75→    75→                filled ? 'fill-amber-400 text-amber-400' : 'fill-muted text-muted'
+    76→    76→              )}
+    77→    77→            />
+    78→    78→          </button>
+    79→    79→        );
+    80→    80→      })}
+    81→    81→    </div>
+    82→    82→  );
+    83→    83→}
+    84→    84→
+    85→    85→// ─── Rating Distribution Bar ────────────────────────────────────────────
+    86→    86→
+    87→    87→function RatingDistribution({ reviews }: { reviews: Review[] }) {
+    88→    88→  const distribution = [5, 4, 3, 2, 1].map((star) => {
+    89→    89→    const count = reviews.filter((r) => Math.floor(r.rating) === star).length;
+    90→    90→    const percent = reviews.length > 0 ? (count / reviews.length) * 100 : 0;
+    91→    91→    return { star, count, percent };
+    92→    92→  });
+    93→    93→
+    94→    94→  return (
+    95→    95→    <div className="space-y-2">
+    96→    96→      {distribution.map(({ star, count, percent }) => (
+    97→    97→        <div key={star} className="flex items-center gap-2 text-sm">
+    98→    98→          <span className="w-6 text-right text-muted-foreground">{star}</span>
+    99→    99→          <Star className="size-3.5 fill-amber-400 text-amber-400 shrink-0" />
+   100→   100→          <div className="flex-1 h-2.5 bg-muted rounded-full overflow-hidden">
+   101→   101→            <div
+   102→   102→              className="h-full bg-foreground rounded-full transition-all duration-500"
+   103→   103→              style={{ width: `${percent}%` }}
+   104→   104→            />
+   105→   105→          </div>
+   106→   106→          <span className="w-8 text-right text-muted-foreground text-xs">{count}</span>
+   107→   107→        </div>
+   108→   108→      ))}
+   109→   109→    </div>
+   110→   110→  );
+   111→   111→}
+   112→   112→
+   113→   113→// ─── Review Form ────────────────────────────────────────────────────────
+   114→   114→
+   115→   115→function ReviewForm({ productId, onSubmit }: { productId: string; onSubmit: () => void }) {
+   116→   116→  const [rating, setRating] = useState(0);
+   117→   117→  const [title, setTitle] = useState('');
+   118→   118→  const [comment, setComment] = useState('');
+   119→   119→  const [isSubmitting, setIsSubmitting] = useState(false);
+   120→   120→  const [success, setSuccess] = useState(false);
+   121→   121→
+   122→   122→  const handleSubmit = async () => {
+   123→   123→    if (rating === 0) return;
+   124→   124→    setIsSubmitting(true);
+   125→   125→    try {
+   126→   126→      const res = await fetch('/api/reviews', {
+   127→   127→        method: 'POST',
+   128→   128→        headers: { 'Content-Type': 'application/json' },
+   129→   129→        body: JSON.stringify({ productId, rating, title, comment }),
+   130→   130→      });
+   131→   131→      if (res.ok) {
+   132→   132→        setSuccess(true);
+   133→   133→        setRating(0);
+   134→   134→        setTitle('');
+   135→   135→        setComment('');
+   136→   136→        onSubmit();
+   137→   137→        setTimeout(() => setSuccess(false), 3000);
+   138→   138→      }
+   139→   139→    } catch {
+   140→   140→      // silently fail
+   141→   141→    } finally {
+   142→   142→      setIsSubmitting(false);
+   143→   143→    }
+   144→   144→  };
+   145→   145→
+   146→   146→  return (
+   147→   147→    <div className="space-y-4 p-4 border border-border rounded-lg bg-muted/20">
+   148→   148→      <h4 className="font-semibold">Write a Review</h4>
+   149→   149→
+   150→   150→      {/* Rating */}
+   151→   151→      <div className="space-y-1">
+   152→   152→        <label className="text-sm text-muted-foreground">Your Rating</label>
+   153→   153→        <StarRatingInput value={rating} onChange={setRating} size="lg" />
+   154→   154→      </div>
+   155→   155→
+   156→   156→      {/* Title */}
+   157→   157→      <div className="space-y-1">
+   158→   158→        <label className="text-sm text-muted-foreground">Review Title</label>
+   159→   159→        <input
+   160→   160→          type="text"
+   161→   161→          value={title}
+   162→   162→          onChange={(e) => setTitle(e.target.value)}
+   163→   163→          placeholder="Summarize your experience"
+   164→   164→          className="w-full h-9 rounded-md border border-border bg-transparent px-3 py-1 text-sm outline-none transition-colors focus:ring-1 focus:ring-foreground/10"
+   165→   165→        />
+   166→   166→      </div>
+   167→   167→
+   168→   168→      {/* Comment */}
+   169→   169→      <div className="space-y-1">
+   170→   170→        <label className="text-sm text-muted-foreground">Your Review</label>
+   171→   171→        <Textarea
+   172→   172→          value={comment}
+   173→   173→          onChange={(e) => setComment(e.target.value)}
+   174→   174→          placeholder="Share your thoughts about this product..."
+   175→   175→          rows={4}
+   176→   176→        />
+   177→   177→      </div>
+   178→   178→
+   179→   179→      <div className="flex items-center gap-3">
+   180→   180→        <button
+   181→   181→          onClick={handleSubmit}
+   182→   182→          disabled={rating === 0 || isSubmitting}
+   183→   183→          className="bg-foreground text-background hover:bg-foreground/90 h-9 px-4 rounded-md text-sm font-medium transition-colors disabled:opacity-50"
+   184→   184→        >
+   185→   185→          {isSubmitting ? 'Submitting...' : 'Submit Review'}
+   186→   186→        </button>
+   187→   187→        {success && (
+   188→   188→          <span className="text-foreground text-sm flex items-center gap-1">
+   189→   189→            <Check className="size-4" />
+   190→   190→            Review submitted!
+   191→   191→          </span>
+   192→   192→        )}
+   193→   193→      </div>
+   194→   194→    </div>
+   195→   195→  );
+   196→   196→}
+   197→   197→
+   198→   198→// ─── Review Item ────────────────────────────────────────────────────────
+   199→   199→
+   200→   200→function ReviewItem({ review }: { review: Review }) {
+   201→   201→  const initials = review.user.name
+   202→   202→    .split(' ')
+   203→   203→    .map((n) => n[0])
+   204→   204→    .join('')
+   205→   205→    .toUpperCase()
+   206→   206→    .slice(0, 2);
+   207→   207→
+   208→   208→  return (
+   209→   209→    <div className="border-b border-border last:border-b-0 py-4 first:pt-0 last:pb-0">
+   210→   210→      <div className="flex items-start gap-3">
+   211→   211→        <Avatar className="size-10">
+   212→   212→          <AvatarFallback className="bg-muted text-foreground text-xs font-semibold">
+   213→   213→            {initials}
+   214→   214→          </AvatarFallback>
+   215→   215→        </Avatar>
+   216→   216→        <div className="flex-1 min-w-0">
+   217→   217→          <div className="flex items-center flex-wrap gap-2">
+   218→   218→            <span className="font-medium text-sm">{review.user.name}</span>
+   219→   219→            {review.isVerified && (
+   220→   220→              <span className="text-[10px] gap-1 bg-muted text-foreground border border-border px-1.5 py-0.5 rounded-sm inline-flex items-center">
+   221→   221→                <Check className="size-3" />
+   222→   222→                Verified Purchase
+   223→   223→              </span>
+   224→   224→            )}
+   225→   225→          </div>
+   226→   226→          <div className="flex items-center gap-2 mt-0.5">
+   227→   227→            <StarRatingInput value={review.rating} readonly size="sm" />
+   228→   228→            <span className="text-xs text-muted-foreground">
+   229→   229→              {new Date(review.createdAt).toLocaleDateString('en-US', {
+   230→   230→                year: 'numeric',
+   231→   231→                month: 'long',
+   232→   232→                day: 'numeric',
+   233→   233→              })}
+   234→   234→            </span>
+   235→   235→          </div>
+   236→   236→          {review.title && (
+   237→   237→            <h5 className="font-medium text-sm mt-2">{review.title}</h5>
+   238→   238→          )}
+   239→   239→          {review.comment && (
+   240→   240→            <p className="text-sm text-muted-foreground mt-1 leading-relaxed">{review.comment}</p>
+   241→   241→          )}
+   242→   242→
+   243→   243→          {/* Admin Reply */}
+   244→   244→          {review.reply && (
+   245→   245→            <div className="mt-3 ml-2 pl-3 border-l-2 border-border bg-muted/20 rounded-r-md p-3">
+   246→   246→              <p className="text-xs font-semibold text-foreground mb-1 flex items-center gap-1">
+   247→   247→                <Package className="size-3" />
+   248→   248→                Seller Response
+   249→   249→              </p>
+   250→   250→              <p className="text-sm text-muted-foreground">{review.reply}</p>
+   251→   251→            </div>
+   252→   252→          )}
+   253→   253→        </div>
+   254→   254→      </div>
+   255→   255→    </div>
+   256→   256→  );
+   257→   257→}
+   258→   258→
+   259→   259→// ─── Main ProductDetail Component ───────────────────────────────────────
+   260→   260→
+   261→   261→export default function ProductDetail() {
+   262→   262→  const selectedProductId = useUIStore((s) => s.selectedProductId);
+   263→   263→  const navigate = useUIStore((s) => s.navigate);
+   264→   264→  const addItem = useCartStore((s) => s.addItem);
+   265→   265→  const { isInWishlist, addItem: addWish, removeItem: removeWish } = useWishlistStore();
+   266→   266→
+   267→   267→  const [product, setProduct] = useState<Product | null>(null);
+   268→   268→  const [reviews, setReviews] = useState<Review[]>([]);
+   269→   269→  const [relatedProducts, setRelatedProducts] = useState<Product[]>([]);
+   270→   270→  const [isLoading, setIsLoading] = useState(true);
+   271→   271→
+   272→   272→  // Gallery state
+   273→   273→  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+   274→   274→
+   275→   275→  // Variant / quantity state
+   276→   276→  const [selectedVariants, setSelectedVariants] = useState<Record<string, string>>({});
+   277→   277→  const [quantity, setQuantity] = useState(1);
+   278→   278→
+   279→   279→  // Review scroll ref
+   280→   280→  const reviewsRef = useRef<HTMLDivElement>(null);
+   281→   281→
+   282→   282→  // Fetch product
+   283→   283→  useEffect(() => {
+   284→   284→    if (!selectedProductId) return;
+   285→   285→    setIsLoading(true);
+   286→   286→    setSelectedImageIndex(0);
+   287→   287→    setSelectedVariants({});
+   288→   288→    setQuantity(1);
+   289→   289→
+   290→   290→    async function fetchProduct() {
+   291→   291→      try {
+   292→   292→        const res = await fetch(`/api/products/${selectedProductId}`);
+   293→   293→        if (res.ok) {
+   294→   294→          const data = await res.json();
+   295→   295→          setProduct(data);
+   296→   296→
+   297→   297→          // Fetch related products
+   298→   298→          if (data.categoryId) {
+   299→   299→            const relatedRes = await fetch(
+   300→   300→              `/api/products?categoryId=${data.categoryId}&limit=4&exclude=${data.id}`
+   301→   301→            );
+   302→   302→            if (relatedRes.ok) {
+   303→   303→              const relatedData = await relatedRes.json();
+   304→   304→              setRelatedProducts(relatedData.products ?? []);
+   305→   305→            }
+   306→   306→          }
+   307→   307→        }
+   308→   308→      } catch {
+   309→   309→        // silently fail
+   310→   310→      } finally {
+   311→   311→        setIsLoading(false);
+   312→   312→      }
+   313→   313→    }
+   314→   314→
+   315→   315→    async function fetchReviews() {
+   316→   316→      try {
+   317→   317→        const res = await fetch(`/api/reviews?productId=${selectedProductId}`);
+   318→   318→        if (res.ok) {
+   319→   319→          const data = await res.json();
+   320→   320→          setReviews(Array.isArray(data) ? data : data.reviews ?? []);
+   321→   321→        }
+   322→   322→      } catch {
+   323→   323→        // silently fail
+   324→   324→      }
+   325→   325→    }
+   326→   326→
+   327→   327→    fetchProduct();
+   328→   328→    fetchReviews();
+   329→   329→  }, [selectedProductId]);
+   330→   330→
+   331→   331→  // Derive values
+   332→   332→  const images = product?.images ?? [];
+   333→   333→  const hasDiscount = product && product.discountPrice && product.discountPrice < product.price;
+   334→   334→  const effectivePrice = product?.discountPrice ?? product?.price ?? 0;
+   335→   335→  const discountPercent =
+   336→   336→    hasDiscount && product
+   337→   337→      ? Math.round(((product.price - (product.discountPrice ?? 0)) / product.price) * 100)
+   338→   338→      : 0;
+   339→   339→  const savingsAmount =
+   340→   340→    hasDiscount && product ? product.price - (product.discountPrice ?? 0) : 0;
+   341→   341→
+   342→   342→  // Group variants by name
+   343→   343→  const variantGroups: Record<string, typeof product.variants> = {};
+   344→   344→  if (product?.variants) {
+   345→   345→    for (const v of product.variants) {
+   346→   346→      if (!variantGroups[v.name]) variantGroups[v.name] = [];
+   347→   347→      variantGroups[v.name].push(v);
+   348→   348→    }
+   349→   349→  }
+   350→   350→
+   351→   351→  // Average review rating
+   352→   352→  const avgRating =
+   353→   353→    reviews.length > 0
+   354→   354→      ? reviews.reduce((sum, r) => sum + r.rating, 0) / reviews.length
+   355→   355→      : product?.rating ?? 0;
+   356→   356→
+   357→   357→  const inWishlist = product ? isInWishlist(product.id) : false;
+   358→   358→
+   359→   359→  // Handlers
+   360→   360→  const handleAddToCart = () => {
+   361→   361→    if (!product) return;
+   362→   362→    const variantId = Object.values(selectedVariants)[0];
+   363→   363→    const variant = product.variants.find((v) => v.id === variantId);
+   364→   364→    addItem(product, quantity, variantId, variant ? `${variant.name}: ${variant.value}` : undefined);
+   365→   365→  };
+   366→   366→
+   367→   367→  const handleWishlist = () => {
+   368→   368→    if (!product) return;
+   369→   369→    if (inWishlist) removeWish(product.id);
+   370→   370→    else addWish(product);
+   371→   371→  };
+   372→   372→
+   373→   373→  const handleBuyNow = () => {
+   374→   374→    handleAddToCart();
+   375→   375→    navigate('checkout');
+   376→   376→  };
+   377→   377→
+   378→   378→  const handleShare = async () => {
+   379→   379→    if (navigator.share && product) {
+   380→   380→      try {
+   381→   381→        await navigator.share({
+   382→   382→          title: product.name,
+   383→   383→          text: product.shortDesc || '',
+   384→   384→          url: window.location.href,
+   385→   385→        });
+   386→   386→      } catch {
+   387→   387→        // User cancelled
+   388→   388→      }
+   389→   389→    }
+   390→   390→  };
+   391→   391→
+   392→   392→  const handleQuantityChange = (delta: number) => {
+   393→   393→    setQuantity((prev) => Math.max(1, prev + delta));
+   394→   394→  };
+   395→   395→
+   396→   396→  // Loading skeleton
+   397→   397→  if (isLoading) {
+   398→   398→    return (
+   399→   399→      <div className="min-h-screen bg-background">
+   400→   400→        <div className="container mx-auto px-4 py-6 max-w-7xl">
+   401→   401→          <Skeleton className="h-4 w-48 mb-8" />
+   402→   402→          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
+   403→   403→            <div className="space-y-4">
+   404→   404→              <Skeleton className="aspect-square w-full rounded-lg" />
+   405→   405→              <div className="flex gap-2">
+   406→   406→                {Array.from({ length: 4 }, (_, i) => (
+   407→   407→                  <Skeleton key={i} className="w-20 h-20 rounded-md" />
+   408→   408→                ))}
+   409→   409→              </div>
+   410→   410→            </div>
+   411→   411→            <div className="space-y-4">
+   412→   412→              <Skeleton className="h-8 w-3/4" />
+   413→   413→              <Skeleton className="h-5 w-48" />
+   414→   414→              <Skeleton className="h-10 w-40" />
+   415→   415→              <Skeleton className="h-16 w-full" />
+   416→   416→              <div className="flex gap-3">
+   417→   417→                <Skeleton className="h-12 flex-1" />
+   418→   418→                <Skeleton className="h-12 w-12" />
+   419→   419→              </div>
+   420→   420→            </div>
+   421→   421→          </div>
+   422→   422→        </div>
+   423→   423→      </div>
+   424→   424→    );
+   425→   425→  }
+   426→   426→
+   427→   427→  if (!product) {
+   428→   428→    return (
+   429→   429→      <div className="min-h-screen bg-background flex items-center justify-center">
+   430→   430→        <div className="text-center space-y-3">
+   431→   431→          <Package className="size-12 text-muted-foreground mx-auto" />
+   432→   432→          <h2 className="text-xl font-semibold">Product Not Found</h2>
+   433→   433→          <button
+   434→   434→            onClick={() => navigate('shop')}
+   435→   435→            className="border border-border hover:bg-accent h-10 px-4 rounded-md text-sm font-medium transition-colors"
+   436→   436→          >
+   437→   437→            Back to Shop
+   438→   438→          </button>
+   439→   439→        </div>
+   440→   440→      </div>
+   441→   441→    );
+   442→   442→  }
+   443→   443→
+   444→   444→  return (
+   445→   445→    <div className="min-h-screen bg-background">
+   446→   446→      <div className="container mx-auto px-4 py-6 max-w-7xl">
+   447→   447→        {/* Breadcrumb */}
+   448→   448→        <Breadcrumb className="mb-6">
+   449→   449→          <BreadcrumbList>
+   450→   450→            <BreadcrumbItem>
+   451→   451→              <BreadcrumbLink
+   452→   452→                href="#"
+   453→   453→                onClick={(e) => { e.preventDefault(); navigate('home'); }}
+   454→   454→                className="text-muted-foreground hover:text-foreground transition-colors"
+   455→   455→              >
+   456→   456→                Home
+   457→   457→              </BreadcrumbLink>
+   458→   458→            </BreadcrumbItem>
+   459→   459→            <BreadcrumbSeparator />
+   460→   460→            <BreadcrumbItem>
+   461→   461→              <BreadcrumbLink
+   462→   462→                href="#"
+   463→   463→                onClick={(e) => { e.preventDefault(); navigate('shop'); }}
+   464→   464→                className="text-muted-foreground hover:text-foreground transition-colors"
+   465→   465→              >
+   466→   466→                {product.category?.name || 'Shop'}
+   467→   467→              </BreadcrumbLink>
+   468→   468→            </BreadcrumbItem>
+   469→   469→            <BreadcrumbSeparator />
+   470→   470→            <BreadcrumbItem>
+   471→   471→              <BreadcrumbPage className="text-foreground font-medium line-clamp-1 max-w-[200px]">{product.name}</BreadcrumbPage>
+   472→   472→            </BreadcrumbItem>
+   473→   473→          </BreadcrumbList>
+   474→   474→        </Breadcrumb>
+   475→   475→
+   476→   476→        {/* Product Main Section */}
+   477→   477→        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-12">
+   478→   478→          {/* ─── Gallery ─── */}
+   479→   479→          <div className="space-y-4">
+   480→   480→            {/* Main Image */}
+   481→   481→            <div className="relative aspect-square rounded-lg overflow-hidden bg-muted">
+   482→   482→              <img
+   483→   483→                src={images[selectedImageIndex]?.url || '/placeholder-product.png'}
+   484→   484→                alt={images[selectedImageIndex]?.alt || product.name}
+   485→   485→                className="h-full w-full object-cover"
+   486→   486→              />
+   487→   487→
+   488→   488→              {/* Badges on image */}
+   489→   489→              <div className="absolute top-3 left-3 flex flex-col gap-1.5">
+   490→   490→                {hasDiscount && (
+   491→   491→                  <span className="bg-foreground text-background text-sm px-2 py-0.5 rounded-sm font-medium">
+   492→   492→                    -{discountPercent}%
+   493→   493→                  </span>
+   494→   494→                )}
+   495→   495→                {product.isNewArrival && (
+   496→   496→                  <span className="bg-muted text-foreground border border-border text-sm px-2 py-0.5 rounded-sm font-medium">New</span>
+   497→   497→                )}
+   498→   498→              </div>
+   499→   499→            </div>
+   500→   500→
+   501→   501→            {/* Thumbnails */}
+   502→   502→            {images.length > 1 && (
+   503→   503→              <div className="flex gap-2 overflow-x-auto pb-1">
+   504→   504→                {images.map((img, i) => (
+   505→   505→                  <button
+   506→   506→                    key={img.id || i}
+   507→   507→                    onClick={() => setSelectedImageIndex(i)}
+   508→   508→                    className={cn(
+   509→   509→                      'shrink-0 w-16 h-16 sm:w-20 sm:h-20 rounded-lg overflow-hidden border-2 transition-all',
+   510→   510→                      selectedImageIndex === i
+   511→   511→                        ? 'border-foreground'
+   512→   512→                        : 'border-transparent hover:border-muted-foreground/30'
+   513→   513→                    )}
+   514→   514→                  >
+   515→   515→                    <img
+   516→   516→                      src={img.url}
+   517→   517→                      alt={img.alt || `${product.name} ${i + 1}`}
+   518→   518→                      className="w-full h-full object-cover"
+   519→   519→                    />
+   520→   520→                  </button>
+   521→   521→                ))}
+   522→   522→              </div>
+   523→   523→            )}
+   524→   524→          </div>
+   525→   525→
+   526→   526→          {/* ─── Product Info ─── */}
+   527→   527→          <div className="space-y-5">
+   528→   528→            {/* Brand */}
+   529→   529→            {product.brand && (
+   530→   530→              <p className="text-sm text-muted-foreground uppercase tracking-wider">
+   531→   531→                {product.brand.name}
+   532→   532→              </p>
+   533→   533→            )}
+   534→   534→
+   535→   535→            {/* Name */}
+   536→   536→            <h1 className="text-2xl md:text-3xl font-semibold tracking-tight leading-tight">{product.name}</h1>
+   537→   537→
+   538→   538→            {/* Rating */}
+   539→   539→            <div
+   540→   540→              className="flex items-center gap-2 hover:opacity-80 transition-opacity cursor-pointer"
+   541→   541→              onClick={() => reviewsRef.current?.scrollIntoView({ behavior: 'smooth' })}
+   542→   542→              role="button"
+   543→   543→              tabIndex={0}
+   544→   544→              onKeyDown={(e) => { if (e.key === 'Enter') reviewsRef.current?.scrollIntoView({ behavior: 'smooth' }); }}
+   545→   545→            >
+   546→   546→              <StarRatingInput value={Math.round(product.rating)} readonly size="sm" />
+   547→   547→              <span className="text-sm text-muted-foreground">
+   548→   548→                {product.rating.toFixed(1)} ({product.reviewCount} reviews)
+   549→   549→              </span>
+   550→   550→            </div>
+   551→   551→
+   552→   552→            {/* Price */}
+   553→   553→            <div className="space-y-1">
+   554→   554→              <div className="flex items-baseline gap-3">
+   555→   555→                <span className="text-2xl font-semibold text-foreground">
+   556→   556→                  {formatPrice(effectivePrice)}
+   557→   557→                </span>
+   558→   558→                {hasDiscount && (
+   559→   559→                  <span className="text-lg text-muted-foreground line-through">
+   560→   560→                    {formatPrice(product.price)}
+   561→   561→                  </span>
+   562→   562→                )}
+   563→   563→              </div>
+   564→   564→              {hasDiscount && savingsAmount > 0 && (
+   565→   565→                <p className="text-sm text-muted-foreground font-medium">
+   566→   566→                  You save {formatPrice(savingsAmount)} ({discountPercent}%)
+   567→   567→                </p>
+   568→   568→              )}
+   569→   569→            </div>
+   570→   570→
+   571→   571→            <Separator />
+   572→   572→
+   573→   573→            {/* Short Description */}
+   574→   574→            {product.shortDesc && (
+   575→   575→              <p className="text-muted-foreground leading-relaxed">{product.shortDesc}</p>
+   576→   576→            )}
+   577→   577→
+   578→   578→            {/* Availability */}
+   579→   579→            <div className="flex items-center gap-2">
+   580→   580→              <div
+   581→   581→                className={cn(
+   582→   582→                  'size-2.5 rounded-full',
+   583→   583→                  product.stock > 0 ? 'bg-foreground' : 'bg-destructive'
+   584→   584→                )}
+   585→   585→              />
+   586→   586→              <span
+   587→   587→                className={cn(
+   588→   588→                  'text-sm font-medium',
+   589→   589→                  product.stock > 0 ? 'text-foreground' : 'text-destructive'
+   590→   590→                )}
+   591→   591→              >
+   592→   592→                {product.stock > 0
+   593→   593→                  ? product.stock <= 5
+   594→   594→                    ? `Only ${product.stock} left in stock`
+   595→   595→                    : 'In Stock'
+   596→   596→                  : 'Out of Stock'}
+   597→   597→              </span>
+   598→   598→            </div>
+   599→   599→
+   600→   600→            {/* Variant Selectors */}
+   601→   601→            {Object.entries(variantGroups).map(([groupName, variants]) => (
+   602→   602→              <div key={groupName} className="space-y-2">
+   603→   603→                <label className="text-sm font-medium">
+   604→   604→                  {groupName}:{' '}
+   605→   605→                  <span className="text-muted-foreground font-normal">
+   606→   606→                    {selectedVariants[groupName] ||
+   607→   607→                      variants.find((v) => v.id === Object.values(selectedVariants)[0])?.value ||
+   608→   608→                      'Select'}
+   609→   609→                  </span>
+   610→   610→                </label>
+   611→   611→                <div className="flex flex-wrap gap-2">
+   612→   612→                  {variants.map((variant) => (
+   613→   613→                    <button
+   614→   614→                      key={variant.id}
+   615→   615→                      className={cn(
+   616→   616→                        'h-9 px-4 rounded-md text-sm font-medium border transition-colors',
+   617→   617→                        selectedVariants[groupName] === variant.value
+   618→   618→                          ? 'bg-foreground text-background border-foreground'
+   619→   619→                          : 'border-border hover:bg-accent text-foreground',
+   620→   620→                        variant.stock <= 0 && 'opacity-40 cursor-not-allowed'
+   621→   621→                      )}
+   622→   622→                      disabled={variant.stock <= 0}
+   623→   623→                      onClick={() =>
+   624→   624→                        setSelectedVariants((prev) => ({ ...prev, [groupName]: variant.value }))
+   625→   625→                      }
+   626→   626→                    >
+   627→   627→                      {variant.value}
+   628→   628→                    </button>
+   629→   629→                  ))}
+   630→   630→                </div>
+   631→   631→              </div>
+   632→   632→            ))}
+   633→   633→
+   634→   634→            {/* Quantity + Actions */}
+   635→   635→            <div className="space-y-4">
+   636→   636→              <div className="flex items-center gap-3">
+   637→   637→                {/* Quantity */}
+   638→   638→                <div className="flex items-center border border-border rounded-lg">
+   639→   639→                  <button
+   640→   640→                    className="size-10 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors rounded-l-lg"
+   641→   641→                    onClick={() => handleQuantityChange(-1)}
+   642→   642→                    disabled={quantity <= 1}
+   643→   643→                    aria-label="Decrease quantity"
+   644→   644→                  >
+   645→   645→                    <Minus className="size-4" />
+   646→   646→                  </button>
+   647→   647→                  <span className="w-12 text-center font-medium tabular-nums">{quantity}</span>
+   648→   648→                  <button
+   649→   649→                    className="size-10 flex items-center justify-center text-muted-foreground hover:text-foreground transition-colors rounded-r-lg"
+   650→   650→                    onClick={() => handleQuantityChange(1)}
+   651→   651→                    aria-label="Increase quantity"
+   652→   652→                  >
+   653→   653→                    <Plus className="size-4" />
+   654→   654→                  </button>
+   655→   655→                </div>
+   656→   656→
+   657→   657→                {/* Add to Cart */}
+   658→   658→                <button
+   659→   659→                  className="flex-1 bg-foreground text-background hover:bg-foreground/90 h-12 rounded-md text-sm font-semibold transition-colors inline-flex items-center justify-center gap-2 disabled:opacity-50"
+   660→   660→                  onClick={handleAddToCart}
+   661→   661→                  disabled={product.stock <= 0}
+   662→   662→                >
+   663→   663→                  <ShoppingCart className="size-4" />
+   664→   664→                  Add to Cart
+   665→   665→                </button>
+   666→   666→              </div>
+   667→   667→
+   668→   668→              <div className="flex gap-3">
+   669→   669→                {/* Wishlist */}
+   670→   670→                <button
+   671→   671→                  className="flex-1 h-11 border border-border hover:bg-accent rounded-md text-sm font-medium transition-colors inline-flex items-center justify-center gap-2"
+   672→   672→                  onClick={handleWishlist}
+   673→   673→                >
+   674→   674→                  <Heart
+   675→   675→                    className={cn('size-4', inWishlist ? 'fill-red-500 text-red-500' : '')}
+   676→   676→                  />
+   677→   677→                  {inWishlist ? 'Wishlisted' : 'Wishlist'}
+   678→   678→                </button>
+   679→   679→
+   680→   680→                {/* Buy Now */}
+   681→   681→                <button
+   682→   682→                  className="flex-1 h-11 border border-border hover:bg-accent rounded-md text-sm font-semibold transition-colors disabled:opacity-50"
+   683→   683→                  onClick={handleBuyNow}
+   684→   684→                  disabled={product.stock <= 0}
+   685→   685→                >
+   686→   686→                  Buy Now
+   687→   687→                </button>
+   688→   688→
+   689→   689→                {/* Share */}
+   690→   690→                <button
+   691→   691→                  className="size-11 border border-border hover:bg-accent rounded-md transition-colors inline-flex items-center justify-center shrink-0"
+   692→   692→                  onClick={handleShare}
+   693→   693→                  aria-label="Share"
+   694→   694→                >
+   695→   695→                  <Share2 className="size-4" />
+   696→   696→                </button>
+   697→   697→              </div>
+   698→   698→            </div>
+   699→   699→
+   700→   700→            <Separator />
+   701→   701→
+   702→   702→            {/* Feature Icons Row */}
+   703→   703→            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+   704→   704→              {[
+   705→   705→                { icon: Truck, label: 'Free Shipping', desc: 'On orders over ৳5,000' },
+   706→   706→                { icon: Shield, label: 'Secure Payment', desc: '100% protected' },
+   707→   707→                { icon: RotateCcw, label: 'Easy Returns', desc: product.returnPolicy || '7-day returns' },
+   708→   708→                { icon: Package, label: 'Warranty', desc: product.warranty || '1 year warranty' },
+   709→   709→              ].map(({ icon: Icon, label, desc }) => (
+   710→   710→                <div key={label} className="flex flex-col items-center text-center gap-1 py-2">
+   711→   711→                  <div className="size-9 rounded-full bg-muted flex items-center justify-center">
+   712→   712→                    <Icon className="size-4 text-muted-foreground" />
+   713→   713→                  </div>
+   714→   714→                  <span className="text-xs font-medium">{label}</span>
+   715→   715→                  <span className="text-[10px] text-muted-foreground leading-tight">{desc}</span>
+   716→   716→                </div>
+   717→   717→              ))}
+   718→   718→            </div>
+   719→   719→          </div>
+   720→   720→        </div>
+   721→   721→
+   722→   722→        {/* ─── Tabs Section ─── */}
+   723→   723→        <div className="mt-12">
+   724→   724→          <div className="border-b border-border">
+   725→   725→            <div className="flex gap-6">
+   726→   726→              {[
+   727→   727→                { id: 'description', label: 'Description' },
+   728→   728→                { id: 'specifications', label: 'Specifications' },
+   729→   729→                { id: 'reviews', label: `Reviews (${reviews.length})` },
+   730→   730→              ].map((tab) => (
+   731→   731→                <button
+   732→   732→                  key={tab.id}
+   733→   733→                  onClick={() => {
+   734→   734→                    if (tab.id === 'reviews') {
+   735→   735→                      reviewsRef.current?.scrollIntoView({ behavior: 'smooth' });
+   736→   736→                    }
+   737→   737→                  }}
+   738→   738→                  className="pb-3 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors border-b-2 border-transparent first:border-foreground first:text-foreground"
+   739→   739→                >
+   740→   740→                  {tab.label}
+   741→   741→                </button>
+   742→   742→              ))}
+   743→   743→            </div>
+   744→   744→          </div>
+   745→   745→
+   746→   746→          {/* Description */}
+   747→   747→          <div className="mt-6">
+   748→   748→            <p className="text-muted-foreground leading-relaxed whitespace-pre-line">
+   749→   749→              {product.description || product.shortDesc || 'No description available for this product.'}
+   750→   750→            </p>
+   751→   751→          </div>
+   752→   752→
+   753→   753→          {/* Specifications */}
+   754→   754→          <div className="mt-8">
+   755→   755→            <h3 className="font-semibold mb-4">Specifications</h3>
+   756→   756→            <div className="border border-border rounded-lg overflow-hidden">
+   757→   757→              <table className="w-full text-sm">
+   758→   758→                <tbody>
+   759→   759→                  {[
+   760→   760→                    { label: 'SKU', value: product.sku },
+   761→   761→                    { label: 'Category', value: product.category?.name },
+   762→   762→                    { label: 'Brand', value: product.brand?.name },
+   763→   763→                    { label: 'Weight', value: product.weight ? `${product.weight}g` : undefined },
+   764→   764→                    { label: 'Warranty', value: product.warranty },
+   765→   765→                    { label: 'Return Policy', value: product.returnPolicy },
+   766→   766→                    { label: 'Shipping', value: product.shippingInfo },
+   767→   767→                  ]
+   768→   768→                    .filter((row) => row.value)
+   769→   769→                    .map((row, i) => (
+   770→   770→                      <tr
+   771→   771→                        key={row.label}
+   772→   772→                        className={cn('border-b border-border last:border-b-0', i % 2 === 0 ? 'bg-muted/20' : '')}
+   773→   773→                      >
+   774→   774→                        <td className="px-4 py-3 font-medium text-muted-foreground w-40">
+   775→   775→                          {row.label}
+   776→   776→                        </td>
+   777→   777→                        <td className="px-4 py-3">{row.value}</td>
+   778→   778→                      </tr>
+   779→   779→                    ))}
+   780→   780→                  {!product.sku &&
+   781→   781→                    !product.weight &&
+   782→   782→                    !product.warranty &&
+   783→   783→                    !product.returnPolicy &&
+   784→   784→                    !product.shippingInfo && (
+   785→   785→                      <tr className="bg-muted/20">
+   786→   786→                        <td className="px-4 py-3 font-medium text-muted-foreground w-40">
+   787→   787→                          Category
+   788→   788→                        </td>
+   789→   789→                        <td className="px-4 py-3">{product.category?.name || 'N/A'}</td>
+   790→   790→                      </tr>
+   791→   791→                    )}
+   792→   792→                </tbody>
+   793→   793→              </table>
+   794→   794→            </div>
+   795→   795→          </div>
+   796→   796→
+   797→   797→          {/* Reviews */}
+   798→   798→          <div className="mt-8" ref={reviewsRef}>
+   799→   799→            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+   800→   800→              {/* Rating Summary */}
+   801→   801→              <div className="lg:col-span-1">
+   802→   802→                <div className="border border-border p-5 rounded-lg sticky top-24">
+   803→   803→                  <div className="text-center mb-4">
+   804→   804→                    <div className="text-4xl font-bold">{avgRating.toFixed(1)}</div>
+   805→   805→                    <StarRatingInput value={Math.round(avgRating)} readonly size="md" />
+   806→   806→                    <p className="text-sm text-muted-foreground mt-1">
+   807→   807→                      Based on {reviews.length} review{reviews.length !== 1 ? 's' : ''}
+   808→   808→                    </p>
+   809→   809→                  </div>
+   810→   810→                  <RatingDistribution reviews={reviews} />
+   811→   811→                </div>
+   812→   812→              </div>
+   813→   813→
+   814→   814→              {/* Reviews List */}
+   815→   815→              <div className="lg:col-span-2 space-y-6">
+   816→   816→                <ReviewForm productId={product.id} onSubmit={() => {}} />
+   817→   817→
+   818→   818→                <Separator />
+   819→   819→
+   820→   820→                <div className="space-y-0">
+   821→   821→                  <h4 className="font-semibold mb-4">
+   822→   822→                    Customer Reviews ({reviews.length})
+   823→   823→                  </h4>
+   824→   824→                  {reviews.length > 0 ? (
+   825→   825→                    reviews.map((review) => <ReviewItem key={review.id} review={review} />)
+   826→   826→                  ) : (
+   827→   827→                    <div className="text-center py-10 text-muted-foreground">
+   828→   828→                      <p>No reviews yet. Be the first to review this product!</p>
+   829→   829→                    </div>
+   830→   830→                  )}
+   831→   831→                </div>
+   832→   832→              </div>
+   833→   833→            </div>
+   834→   834→          </div>
+   835→   835→        </div>
+   836→   836→
+   837→   837→        {/* ─── Related Products ─── */}
+   838→   838→        {relatedProducts.length > 0 && (
+   839→   839→          <div className="mt-16">
+   840→   840→            <div className="flex items-center justify-between mb-6">
+   841→   841→              <h2 className="text-xl font-semibold tracking-tight">Related Products</h2>
+   842→   842→              <button
+   843→   843→                onClick={() => navigate('shop')}
+   844→   844→                className="border border-border hover:bg-accent h-8 px-3 rounded-md text-sm transition-colors inline-flex items-center gap-1"
+   845→   845→              >
+   846→   846→                View All
+   847→   847→                <ChevronRight className="size-4" />
+   848→   848→              </button>
+   849→   849→            </div>
+   850→   850→            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+   851→   851→              {relatedProducts.map((p) => (
+   852→   852→                <ProductCard key={p.id} product={p} />
+   853→   853→              ))}
+   854→   854→            </div>
+   855→   855→          </div>
+   856→   856→        )}
+   857→   857→      </div>
+   858→   858→    </div>
+   859→   859→  );
+   860→   860→}

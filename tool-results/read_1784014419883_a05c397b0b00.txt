@@ -1,0 +1,502 @@
+  1050→                    </CardContent>
+  1051→                  </Card>
+  1052→                )}
+  1053→
+  1054→                {/* ════════════════════════════════════════════
+  1055→                    PRODUCTS TAB
+  1056→                ════════════════════════════════════════════ */}
+  1057→                {activeTab === 'products' && (
+  1058→                  <Card>
+  1059→                    <CardHeader>
+  1060→                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+  1061→                        <div>
+  1062→                          <CardTitle>Products</CardTitle>
+  1063→                          <CardDescription>Manage your product catalog</CardDescription>
+  1064→                        </div>
+  1065→                        <div className="flex flex-col sm:flex-row gap-2">
+  1066→                          <div className="relative w-full sm:w-72">
+  1067→                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+  1068→                            <Input
+  1069→                              placeholder="Search products..."
+  1070→                              value={productSearch}
+  1071→                              onChange={(e) => { setProductSearch(e.target.value); setProductPage(1); }}
+  1072→                              className="pl-9"
+  1073→                            />
+  1074→                          </div>
+  1075→                          <Button size="sm" className="gap-1 shrink-0" onClick={() => handleOpenProductDialog()}>
+  1076→                            <Plus className="h-4 w-4" />
+  1077→                            Add Product
+  1078→                          </Button>
+  1079→                        </div>
+  1080→                      </div>
+  1081→                    </CardHeader>
+  1082→                    <CardContent>
+  1083→                      {/* Status filter */}
+  1084→                      <div className="flex gap-2 mb-4">
+  1085→                        {['all', 'active', 'draft'].map(s => (
+  1086→                          <Button
+  1087→                            key={s}
+  1088→                            variant={productStatusFilter === s ? 'default' : 'outline'}
+  1089→                            size="sm"
+  1090→                            className="h-7 text-xs"
+  1091→                            onClick={() => { setProductStatusFilter(s); setProductPage(1); }}
+  1092→                          >
+  1093→                            {s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}
+  1094→                          </Button>
+  1095→                        ))}
+  1096→                      </div>
+  1097→
+  1098→                      {paginatedProducts.length === 0 ? (
+  1099→                        <div className="text-center py-12 text-muted-foreground text-sm">
+  1100→                          No products found.
+  1101→                        </div>
+  1102→                      ) : (
+  1103→                        <>
+  1104→                          <ScrollArea className="max-h-[500px]">
+  1105→                            <Table>
+  1106→                              <TableHeader>
+  1107→                                <TableRow>
+  1108→                                  <TableHead className="w-12"></TableHead>
+  1109→                                  <TableHead>Name</TableHead>
+  1110→                                  <TableHead className="hidden md:table-cell">Category</TableHead>
+  1111→                                  <TableHead>Price</TableHead>
+  1112→                                  <TableHead className="hidden sm:table-cell">Stock</TableHead>
+  1113→                                  <TableHead>Status</TableHead>
+  1114→                                  <TableHead className="text-right">Actions</TableHead>
+  1115→                                </TableRow>
+  1116→                              </TableHeader>
+  1117→                              <TableBody>
+  1118→                                {paginatedProducts.map((product) => (
+  1119→                                  <TableRow key={product.id}>
+  1120→                                    <TableCell>
+  1121→                                      <div className="h-10 w-10 rounded-md bg-muted flex items-center justify-center overflow-hidden">
+  1122→                                        {product.images?.[0] ? (
+  1123→                                          <img src={product.images[0].url} alt={product.name} className="h-full w-full object-cover" />
+  1124→                                        ) : (
+  1125→                                          <ImageIcon className="h-4 w-4 text-muted-foreground/40" />
+  1126→                                        )}
+  1127→                                      </div>
+  1128→                                    </TableCell>
+  1129→                                    <TableCell>
+  1130→                                      <div>
+  1131→                                        <p className="font-medium text-sm line-clamp-1">{product.name}</p>
+  1132→                                        <p className="text-xs text-muted-foreground md:hidden">{product.category?.name}</p>
+  1133→                                        <div className="flex gap-1 mt-0.5">
+  1134→                                          {product.isFeatured && <Badge variant="outline" className="text-[10px] h-4 px-1 py-0">Featured</Badge>}
+  1135→                                          {product.isTrending && <Badge variant="outline" className="text-[10px] h-4 px-1 py-0">Trending</Badge>}
+  1136→                                          {product.isNewArrival && <Badge variant="outline" className="text-[10px] h-4 px-1 py-0">New</Badge>}
+  1137→                                        </div>
+  1138→                                      </div>
+  1139→                                    </TableCell>
+  1140→                                    <TableCell className="hidden md:table-cell text-sm">
+  1141→                                      {product.category?.name ?? '—'}
+  1142→                                    </TableCell>
+  1143→                                    <TableCell>
+  1144→                                      <div>
+  1145→                                        <span className="font-semibold text-sm">{formatCurrency(product.discountPrice ?? product.price)}</span>
+  1146→                                        {product.discountPrice && (
+  1147→                                          <span className="text-xs text-muted-foreground line-through ml-1">{formatCurrency(product.price)}</span>
+  1148→                                        )}
+  1149→                                      </div>
+  1150→                                    </TableCell>
+  1151→                                    <TableCell className="hidden sm:table-cell">
+  1152→                                      <div className="space-y-1">
+  1153→                                        <span className="text-sm font-medium">{product.stock}</span>
+  1154→                                        {product.stock > 0 && product.stock <= 10 && (
+  1155→                                          <p className="text-xs text-yellow-600">Low stock</p>
+  1156→                                        )}
+  1157→                                      </div>
+  1158→                                    </TableCell>
+  1159→                                    <TableCell>
+  1160→                                      {product.status === 'active' ? (
+  1161→                                        product.stock > 10 ? (
+  1162→                                          <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-100">In Stock</Badge>
+  1163→                                        ) : product.stock > 0 ? (
+  1164→                                          <Badge className="bg-yellow-100 text-yellow-800 border-yellow-300 hover:bg-yellow-100">Low Stock</Badge>
+  1165→                                        ) : (
+  1166→                                          <Badge className="bg-red-100 text-red-800 border-red-300 hover:bg-red-100">Out of Stock</Badge>
+  1167→                                        )
+  1168→                                      ) : (
+  1169→                                        <Badge variant="outline">Inactive</Badge>
+  1170→                                      )}
+  1171→                                    </TableCell>
+  1172→                                    <TableCell className="text-right">
+  1173→                                      <div className="flex items-center justify-end gap-1">
+  1174→                                        <Button variant="ghost" size="sm" onClick={() => handleOpenProductDialog(product)}>
+  1175→                                          <Pencil className="h-4 w-4" />
+  1176→                                        </Button>
+  1177→                                        <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => handleDeleteProduct(product.id)}>
+  1178→                                          <Trash2 className="h-4 w-4" />
+  1179→                                        </Button>
+  1180→                                      </div>
+  1181→                                    </TableCell>
+  1182→                                  </TableRow>
+  1183→                                ))}
+  1184→                              </TableBody>
+  1185→                            </Table>
+  1186→                          </ScrollArea>
+  1187→
+  1188→                          <Pagination page={productPage} totalPages={totalProductPages} onPageChange={setProductPage} />
+  1189→                        </>
+  1190→                      )}
+  1191→                    </CardContent>
+  1192→                  </Card>
+  1193→                )}
+  1194→
+  1195→                {/* ════════════════════════════════════════════
+  1196→                    USERS TAB
+  1197→                ════════════════════════════════════════════ */}
+  1198→                {activeTab === 'users' && (
+  1199→                  <Card>
+  1200→                    <CardHeader>
+  1201→                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+  1202→                        <div>
+  1203→                          <CardTitle>Users</CardTitle>
+  1204→                          <CardDescription>Manage registered users</CardDescription>
+  1205→                        </div>
+  1206→                        <div className="relative w-full sm:w-72">
+  1207→                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+  1208→                          <Input
+  1209→                            placeholder="Search users..."
+  1210→                            value={userSearch}
+  1211→                            onChange={(e) => { setUserSearch(e.target.value); setUserPage(1); }}
+  1212→                            className="pl-9"
+  1213→                          />
+  1214→                        </div>
+  1215→                      </div>
+  1216→                    </CardHeader>
+  1217→                    <CardContent>
+  1218→                      {filteredUsers.length === 0 ? (
+  1219→                        <div className="flex flex-col items-center justify-center py-12 text-center">
+  1220→                          <Users className="h-16 w-16 text-muted-foreground/30 mb-4" />
+  1221→                          <h3 className="font-semibold text-lg mb-1">No users found</h3>
+  1222→                          <p className="text-muted-foreground text-sm">Users will appear here when they register.</p>
+  1223→                        </div>
+  1224→                      ) : (
+  1225→                        <>
+  1226→                          <ScrollArea className="max-h-[500px]">
+  1227→                            <Table>
+  1228→                              <TableHeader>
+  1229→                                <TableRow>
+  1230→                                  <TableHead>User</TableHead>
+  1231→                                  <TableHead className="hidden sm:table-cell">Email</TableHead>
+  1232→                                  <TableHead>Role</TableHead>
+  1233→                                  <TableHead className="hidden md:table-cell">Orders</TableHead>
+  1234→                                  <TableHead>Status</TableHead>
+  1235→                                  <TableHead className="hidden lg:table-cell">Joined</TableHead>
+  1236→                                </TableRow>
+  1237→                              </TableHeader>
+  1238→                              <TableBody>
+  1239→                                {paginatedUsers.map((u) => (
+  1240→                                  <TableRow key={u.id}>
+  1241→                                    <TableCell>
+  1242→                                      <div className="flex items-center gap-3">
+  1243→                                        <Avatar className="h-8 w-8">
+  1244→                                          <AvatarFallback className="text-xs">{u.name.charAt(0).toUpperCase()}</AvatarFallback>
+  1245→                                        </Avatar>
+  1246→                                        <span className="font-medium text-sm">{u.name}</span>
+  1247→                                      </div>
+  1248→                                    </TableCell>
+  1249→                                    <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">{u.email}</TableCell>
+  1250→                                    <TableCell>
+  1251→                                      <Select value={u.role} onValueChange={(v) => handleUserRoleChange(u.id, v)}>
+  1252→                                        <SelectTrigger className="h-7 w-24 text-xs">
+  1253→                                          <SelectValue />
+  1254→                                        </SelectTrigger>
+  1255→                                        <SelectContent>
+  1256→                                          <SelectItem value="customer">Customer</SelectItem>
+  1257→                                          <SelectItem value="seller">Seller</SelectItem>
+  1258→                                          <SelectItem value="admin">Admin</SelectItem>
+  1259→                                        </SelectContent>
+  1260→                                      </Select>
+  1261→                                    </TableCell>
+  1262→                                    <TableCell className="hidden md:table-cell text-sm">
+  1263→                                      <span className="font-medium">{u._count?.orders ?? 0}</span>
+  1264→                                    </TableCell>
+  1265→                                    <TableCell>
+  1266→                                      <button
+  1267→                                        onClick={() => handleUserStatusToggle(u.id, u.isActive)}
+  1268→                                        className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium border transition-colors ${
+  1269→                                          u.isActive
+  1270→                                            ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+  1271→                                            : 'bg-muted text-muted-foreground border-border hover:bg-muted/80'
+  1272→                                        }`}
+  1273→                                      >
+  1274→                                        <span className={`h-1.5 w-1.5 rounded-full ${u.isActive ? 'bg-emerald-500' : 'bg-muted-foreground/40'}`} />
+  1275→                                        {u.isActive ? 'Active' : 'Inactive'}
+  1276→                                      </button>
+  1277→                                    </TableCell>
+  1278→                                    <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
+  1279→                                      {u.createdAt ? formatDate(u.createdAt) : '—'}
+  1280→                                    </TableCell>
+  1281→                                  </TableRow>
+  1282→                                ))}
+  1283→                              </TableBody>
+  1284→                            </Table>
+  1285→                          </ScrollArea>
+  1286→
+  1287→                          <Pagination page={userPage} totalPages={totalUserPages} onPageChange={setUserPage} />
+  1288→                        </>
+  1289→                      )}
+  1290→                    </CardContent>
+  1291→                  </Card>
+  1292→                )}
+  1293→
+  1294→                {/* ════════════════════════════════════════════
+  1295→                    COUPONS TAB
+  1296→                ════════════════════════════════════════════ */}
+  1297→                {activeTab === 'coupons' && (
+  1298→                  <Card>
+  1299→                    <CardHeader>
+  1300→                      <div className="flex items-center justify-between">
+  1301→                        <div>
+  1302→                          <CardTitle>Coupons</CardTitle>
+  1303→                          <CardDescription>Manage discount coupons and promotions</CardDescription>
+  1304→                        </div>
+  1305→                        <Button size="sm" className="gap-1">
+  1306→                          <Tag className="h-4 w-4" />
+  1307→                          Create Coupon
+  1308→                        </Button>
+  1309→                      </div>
+  1310→                    </CardHeader>
+  1311→                    <CardContent>
+  1312→                      {coupons.length === 0 ? (
+  1313→                        <div className="flex flex-col items-center justify-center py-12 text-center">
+  1314→                          <Tag className="h-16 w-16 text-muted-foreground/30 mb-4" />
+  1315→                          <h3 className="font-semibold text-lg mb-1">No coupons</h3>
+  1316→                          <p className="text-muted-foreground text-sm">Create your first discount coupon</p>
+  1317→                        </div>
+  1318→                      ) : (
+  1319→                        <ScrollArea className="max-h-96">
+  1320→                          <Table>
+  1321→                            <TableHeader>
+  1322→                              <TableRow>
+  1323→                                <TableHead>Code</TableHead>
+  1324→                                <TableHead>Type</TableHead>
+  1325→                                <TableHead>Value</TableHead>
+  1326→                                <TableHead className="hidden sm:table-cell">Min Purchase</TableHead>
+  1327→                                <TableHead className="hidden md:table-cell">Used / Limit</TableHead>
+  1328→                                <TableHead>Status</TableHead>
+  1329→                                <TableHead className="text-right">Actions</TableHead>
+  1330→                              </TableRow>
+  1331→                            </TableHeader>
+  1332→                            <TableBody>
+  1333→                              {coupons.map((coupon) => (
+  1334→                                <TableRow key={coupon.id}>
+  1335→                                  <TableCell>
+  1336→                                    <code className="bg-muted px-2 py-1 rounded text-sm font-mono font-semibold">{coupon.code}</code>
+  1337→                                  </TableCell>
+  1338→                                  <TableCell className="text-sm capitalize">{coupon.type}</TableCell>
+  1339→                                  <TableCell className="font-semibold text-sm">
+  1340→                                    {coupon.type === 'percentage' ? `${coupon.value}%` : formatCurrency(coupon.value)}
+  1341→                                  </TableCell>
+  1342→                                  <TableCell className="hidden sm:table-cell text-sm">
+  1343→                                    {coupon.minPurchase ? formatCurrency(coupon.minPurchase) : '—'}
+  1344→                                  </TableCell>
+  1345→                                  <TableCell className="hidden md:table-cell">
+  1346→                                    <div className="flex items-center gap-2">
+  1347→                                      <Progress value={coupon.usageLimit ? (coupon.usedCount / coupon.usageLimit) * 100 : 0} className="h-2 w-16" />
+  1348→                                      <span className="text-xs text-muted-foreground">{coupon.usedCount}{coupon.usageLimit ? `/${coupon.usageLimit}` : ''}</span>
+  1349→                                    </div>
+  1350→                                  </TableCell>
+  1351→                                  <TableCell>
+  1352→                                    <Badge variant={coupon.status === 'active' ? 'default' : 'outline'} className={coupon.status === 'active' ? 'bg-emerald-500' : ''}>
+  1353→                                      {coupon.status}
+  1354→                                    </Badge>
+  1355→                                  </TableCell>
+  1356→                                  <TableCell className="text-right">
+  1357→                                    <Button variant="ghost" size="sm">
+  1358→                                      <MoreHorizontal className="h-4 w-4" />
+  1359→                                    </Button>
+  1360→                                  </TableCell>
+  1361→                                </TableRow>
+  1362→                              ))}
+  1363→                            </TableBody>
+  1364→                          </Table>
+  1365→                        </ScrollArea>
+  1366→                      )}
+  1367→                    </CardContent>
+  1368→                  </Card>
+  1369→                )}
+  1370→
+  1371→                {/* ════════════════════════════════════════════
+  1372→                    REVIEWS TAB
+  1373→                ════════════════════════════════════════════ */}
+  1374→                {activeTab === 'reviews' && (
+  1375→                  <Card>
+  1376→                    <CardHeader>
+  1377→                      <CardTitle>Reviews</CardTitle>
+  1378→                      <CardDescription>Monitor and manage customer reviews</CardDescription>
+  1379→                    </CardHeader>
+  1380→                    <CardContent>
+  1381→                      {reviews.length === 0 ? (
+  1382→                        <div className="flex flex-col items-center justify-center py-12 text-center">
+  1383→                          <MessageSquare className="h-16 w-16 text-muted-foreground/30 mb-4" />
+  1384→                          <h3 className="font-semibold text-lg mb-1">No reviews yet</h3>
+  1385→                          <p className="text-muted-foreground text-sm">Customer reviews will appear here</p>
+  1386→                        </div>
+  1387→                      ) : (
+  1388→                        <ScrollArea className="max-h-96">
+  1389→                          <Table>
+  1390→                            <TableHeader>
+  1391→                              <TableRow>
+  1392→                                <TableHead className="hidden lg:table-cell">Product</TableHead>
+  1393→                                <TableHead>User</TableHead>
+  1394→                                <TableHead>Rating</TableHead>
+  1395→                                <TableHead className="hidden md:table-cell">Comment</TableHead>
+  1396→                                <TableHead>Status</TableHead>
+  1397→                                <TableHead className="hidden sm:table-cell">Date</TableHead>
+  1398→                                <TableHead className="text-right">Actions</TableHead>
+  1399→                              </TableRow>
+  1400→                            </TableHeader>
+  1401→                            <TableBody>
+  1402→                              {reviews.map((review) => (
+  1403→                                <TableRow key={review.id}>
+  1404→                                  <TableCell className="hidden lg:table-cell text-sm font-medium">Product #{review.productId.slice(0, 8)}</TableCell>
+  1405→                                  <TableCell>
+  1406→                                    <div className="flex items-center gap-2">
+  1407→                                      <Avatar className="h-7 w-7">
+  1408→                                        <AvatarFallback className="text-xs">{review.user.name.charAt(0).toUpperCase()}</AvatarFallback>
+  1409→                                      </Avatar>
+  1410→                                      <span className="text-sm">{review.user.name}</span>
+  1411→                                    </div>
+  1412→                                  </TableCell>
+  1413→                                  <TableCell>
+  1414→                                    <div className="flex items-center gap-1">
+  1415→                                      <StarRating rating={review.rating} />
+  1416→                                      <span className="text-xs text-muted-foreground ml-1">({review.rating})</span>
+  1417→                                    </div>
+  1418→                                  </TableCell>
+  1419→                                  <TableCell className="hidden md:table-cell text-sm text-muted-foreground max-w-48 truncate">
+  1420→                                    {review.comment || '—'}
+  1421→                                  </TableCell>
+  1422→                                  <TableCell>
+  1423→                                    <Badge variant={review.isVerified ? 'default' : 'outline'} className={review.isVerified ? 'bg-emerald-500' : ''}>
+  1424→                                      {review.isVerified ? 'Verified' : 'Pending'}
+  1425→                                    </Badge>
+  1426→                                  </TableCell>
+  1427→                                  <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
+  1428→                                    {formatDate(review.createdAt)}
+  1429→                                  </TableCell>
+  1430→                                  <TableCell className="text-right">
+  1431→                                    <Button variant="ghost" size="sm">
+  1432→                                      <MoreHorizontal className="h-4 w-4" />
+  1433→                                    </Button>
+  1434→                                  </TableCell>
+  1435→                                </TableRow>
+  1436→                              ))}
+  1437→                            </TableBody>
+  1438→                          </Table>
+  1439→                        </ScrollArea>
+  1440→                      )}
+  1441→                    </CardContent>
+  1442→                  </Card>
+  1443→                )}
+  1444→
+  1445→                {/* ════════════════════════════════════════════
+  1446→                    SETTINGS TAB
+  1447→                ════════════════════════════════════════════ */}
+  1448→                {activeTab === 'settings' && (
+  1449→                  <div className="space-y-6">
+  1450→                    <Card>
+  1451→                      <CardHeader>
+  1452→                        <CardTitle>General Settings</CardTitle>
+  1453→                        <CardDescription>Configure your store settings</CardDescription>
+  1454→                      </CardHeader>
+  1455→                      <CardContent className="space-y-4">
+  1456→                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-3xl">
+  1457→                          <div className="space-y-2">
+  1458→                            <Label>Store Name</Label>
+  1459→                            <Input
+  1460→                              value={settingsForm.storeName || ''}
+  1461→                              onChange={(e) => setSettingsForm(prev => ({ ...prev, storeName: e.target.value }))}
+  1462→                            />
+  1463→                          </div>
+  1464→                          <div className="space-y-2">
+  1465→                            <Label>Tagline</Label>
+  1466→                            <Input
+  1467→                              value={settingsForm.tagline || ''}
+  1468→                              onChange={(e) => setSettingsForm(prev => ({ ...prev, tagline: e.target.value }))}
+  1469→                            />
+  1470→                          </div>
+  1471→                          <div className="space-y-2">
+  1472→                            <Label>Currency Symbol</Label>
+  1473→                            <Input
+  1474→                              value={settingsForm.currency || ''}
+  1475→                              onChange={(e) => setSettingsForm(prev => ({ ...prev, currency: e.target.value }))}
+  1476→                            />
+  1477→                          </div>
+  1478→                          <div className="space-y-2">
+  1479→                            <Label>Currency Code</Label>
+  1480→                            <Input
+  1481→                              value={settingsForm.currencyCode || ''}
+  1482→                              onChange={(e) => setSettingsForm(prev => ({ ...prev, currencyCode: e.target.value }))}
+  1483→                            />
+  1484→                          </div>
+  1485→                          <div className="space-y-2">
+  1486→                            <Label>Free Shipping Minimum (৳)</Label>
+  1487→                            <Input
+  1488→                              type="number"
+  1489→                              value={settingsForm.freeShippingMin || ''}
+  1490→                              onChange={(e) => setSettingsForm(prev => ({ ...prev, freeShippingMin: e.target.value }))}
+  1491→                            />
+  1492→                          </div>
+  1493→                          <div className="space-y-2">
+  1494→                            <Label>Default Shipping Rate (৳)</Label>
+  1495→                            <Input
+  1496→                              type="number"
+  1497→                              value={settingsForm.defaultShippingRate || ''}
+  1498→                              onChange={(e) => setSettingsForm(prev => ({ ...prev, defaultShippingRate: e.target.value }))}
+  1499→                            />
+  1500→                          </div>
+  1501→                          <div className="space-y-2">
+  1502→                            <Label>Tax Rate (%)</Label>
+  1503→                            <Input
+  1504→                              type="number"
+  1505→                              value={settingsForm.taxRate || ''}
+  1506→                              onChange={(e) => setSettingsForm(prev => ({ ...prev, taxRate: e.target.value }))}
+  1507→                            />
+  1508→                          </div>
+  1509→                        </div>
+  1510→                      </CardContent>
+  1511→                    </Card>
+  1512→
+  1513→                    <Card>
+  1514→                      <CardHeader>
+  1515→                        <CardTitle>Contact Information</CardTitle>
+  1516→                        <CardDescription>How customers can reach you</CardDescription>
+  1517→                      </CardHeader>
+  1518→                      <CardContent className="space-y-4">
+  1519→                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-3xl">
+  1520→                          <div className="space-y-2">
+  1521→                            <Label>Contact Email</Label>
+  1522→                            <Input
+  1523→                              type="email"
+  1524→                              value={settingsForm.contactEmail || ''}
+  1525→                              onChange={(e) => setSettingsForm(prev => ({ ...prev, contactEmail: e.target.value }))}
+  1526→                            />
+  1527→                          </div>
+  1528→                          <div className="space-y-2">
+  1529→                            <Label>Phone</Label>
+  1530→                            <Input
+  1531→                              value={settingsForm.phone || ''}
+  1532→                              onChange={(e) => setSettingsForm(prev => ({ ...prev, phone: e.target.value }))}
+  1533→                            />
+  1534→                          </div>
+  1535→                          <div className="space-y-2 sm:col-span-2">
+  1536→                            <Label>Address</Label>
+  1537→                            <Input
+  1538→                              value={settingsForm.address || ''}
+  1539→                              onChange={(e) => setSettingsForm(prev => ({ ...prev, address: e.target.value }))}
+  1540→                            />
+  1541→                          </div>
+  1542→                        </div>
+  1543→
+  1544→                        <div className="flex items-center gap-3 pt-2">
+  1545→                          <Button onClick={handleSaveSettings} disabled={settingsSaving} className="gap-2">
+  1546→                            {settingsSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+  1547→                            Save Settings
+  1548→                          </Button>
+  1549→                          {siteSettings !== settingsForm && (
+
+[showing lines 1050-1549 of 1742; use offset=1550 with limit to continue reading]

@@ -1,0 +1,625 @@
+     1→'use client';
+     2→
+     3→import { useState, useEffect, useRef, useCallback, useSyncExternalStore } from 'react';
+     4→import { useUIStore } from '@/store/use-ui';
+     5→import { useCartStore } from '@/store/use-cart';
+     6→import { useWishlistStore } from '@/store/use-wishlist';
+     7→import { useAuthStore } from '@/store/use-auth';
+     8→import { useTheme } from 'next-themes';
+     9→import { useSiteSettings } from '@/store/use-site-settings';
+    10→import type { Product, Category } from '@/types';
+    11→
+    12→import { Input } from '@/components/ui/input';
+    13→import {
+    14→  Sheet,
+    15→  SheetContent,
+    16→  SheetHeader,
+    17→  SheetTitle,
+    18→} from '@/components/ui/sheet';
+    19→import {
+    20→  DropdownMenu,
+    21→  DropdownMenuContent,
+    22→  DropdownMenuGroup,
+    23→  DropdownMenuItem,
+    24→  DropdownMenuLabel,
+    25→  DropdownMenuSeparator,
+    26→  DropdownMenuTrigger,
+    27→} from '@/components/ui/dropdown-menu';
+    28→import {
+    29→  Search,
+    30→  ShoppingCart,
+    31→  Heart,
+    32→  User,
+    33→  Menu,
+    34→  X,
+    35→  Sun,
+    36→  Moon,
+    37→  ChevronDown,
+    38→  Package,
+    39→  MapPin,
+    40→} from 'lucide-react';
+    41→
+    42→export default function Header() {
+    43→  const { categories, navigate, setSearchQuery, setCategory } = useUIStore();
+    44→  const { getItemCount } = useCartStore();
+    45→  const { items: wishlistItems } = useWishlistStore();
+    46→  const { user, isAuthenticated, logout } = useAuthStore();
+    47→  const { theme, setTheme } = useTheme();
+    48→  const { settings } = useSiteSettings();
+    49→
+    50→  const [searchValue, setSearchValue] = useState('');
+    51→  const [searchSuggestions, setSearchSuggestions] = useState<Product[]>([]);
+    52→  const [isSearchFocused, setIsSearchFocused] = useState(false);
+    53→  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+    54→  const [mobileSheetOpen, setMobileSheetOpen] = useState(false);
+    55→  const mounted = useSyncExternalStore(
+    56→    () => () => {},
+    57→    () => true,
+    58→    () => false
+    59→  );
+    60→  const searchRef = useRef<HTMLDivElement>(null);
+    61→  const searchTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+    62→
+    63→  const cartCount = getItemCount();
+    64→  const wishlistCount = wishlistItems.length;
+    65→
+    66→  // Close search dropdown on outside click
+    67→  useEffect(() => {
+    68→    function handleClickOutside(event: MouseEvent) {
+    69→      if (searchRef.current && !searchRef.current.contains(event.target as Node)) {
+    70→        setIsSearchFocused(false);
+    71→      }
+    72→    }
+    73→    document.addEventListener('mousedown', handleClickOutside);
+    74→    return () => document.removeEventListener('mousedown', handleClickOutside);
+    75→  }, []);
+    76→
+    77→  // Debounced search suggestions
+    78→  const fetchSuggestions = useCallback(async (query: string) => {
+    79→    if (query.trim().length < 2) {
+    80→      setSearchSuggestions([]);
+    81→      return;
+    82→    }
+    83→    try {
+    84→      const res = await fetch(`/api/products?search=${encodeURIComponent(query)}&limit=5`);
+    85→      if (res.ok) {
+    86→        const data = await res.json();
+    87→        setSearchSuggestions(data.products || []);
+    88→      }
+    89→    } catch {
+    90→      setSearchSuggestions([]);
+    91→    }
+    92→  }, []);
+    93→
+    94→  const handleSearchChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    95→    const val = e.target.value;
+    96→    setSearchValue(val);
+    97→    if (searchTimeoutRef.current) clearTimeout(searchTimeoutRef.current);
+    98→    searchTimeoutRef.current = setTimeout(() => {
+    99→      fetchSuggestions(val);
+   100→    }, 300);
+   101→  };
+   102→
+   103→  const handleSearchSubmit = (e: React.FormEvent) => {
+   104→    e.preventDefault();
+   105→    setSearchQuery(searchValue.trim());
+   106→    navigate('shop');
+   107→    setIsSearchFocused(false);
+   108→    setMobileSearchOpen(false);
+   109→  };
+   110→
+   111→  const handleSuggestionClick = (product: Product) => {
+   112→    setSearchValue(product.name);
+   113→    setSearchSuggestions([]);
+   114→    setIsSearchFocused(false);
+   115→    useUIStore.getState().viewProduct(product.id);
+   116→    setMobileSearchOpen(false);
+   117→  };
+   118→
+   119→  const handleCategoryClick = (category: Category) => {
+   120→    setCategory(category.id);
+   121→    navigate('shop');
+   122→    setMobileSheetOpen(false);
+   123→  };
+   124→
+   125→  const handleLogout = () => {
+   126→    logout();
+   127→    navigate('home');
+   128→  };
+   129→
+   130→  return (
+   131→    <header className="sticky top-0 z-50 w-full backdrop-blur-xl bg-background/80 border-b border-border/50">
+   132→      <div className="mx-auto flex h-16 items-center gap-4 px-5 lg:px-10">
+   133→        {/* Mobile Menu Trigger */}
+   134→        <button
+   135→          className="shrink-0 lg:hidden p-2 -ml-2 text-muted-foreground hover:text-foreground transition-colors duration-200"
+   136→          onClick={() => setMobileSheetOpen(true)}
+   137→          aria-label="Open menu"
+   138→        >
+   139→          <Menu className="size-[18px]" strokeWidth={1.5} />
+   140→        </button>
+   141→
+   142→        {/* Logo */}
+   143→        <button
+   144→          onClick={() => navigate('home')}
+   145→          className="shrink-0"
+   146→          aria-label="Go to homepage"
+   147→        >
+   148→          {settings.logoUrl ? (
+   149→            <img src={settings.logoUrl} alt={settings.storeName} className="h-8 w-auto object-contain" />
+   150→          ) : (
+   151→            <span className="text-lg font-medium tracking-tight text-foreground">
+   152→              {settings.storeName}
+   153→            </span>
+   154→          )}
+   155→        </button>
+   156→
+   157→        {/* Desktop Navigation */}
+   158→        <nav className="hidden lg:flex items-center gap-7 ml-10" aria-label="Main navigation">
+   159→          <button
+   160→            onClick={() => {
+   161→              setCategory(null);
+   162→              navigate('shop');
+   163→            }}
+   164→            className="nav-link text-[13px] text-muted-foreground hover:text-foreground transition-colors duration-200 py-5 font-light"
+   165→          >
+   166→            All Products
+   167→          </button>
+   168→          {categories.map((category) => (
+   169→            <button
+   170→              key={category.id}
+   171→              onClick={() => handleCategoryClick(category)}
+   172→              className="nav-link flex items-center gap-1 text-[13px] text-muted-foreground hover:text-foreground transition-colors duration-200 py-5 font-light"
+   173→            >
+   174→              {category.name}
+   175→              {category.children && category.children.length > 0 && (
+   176→                <ChevronDown className="size-3 opacity-50" strokeWidth={1.5} />
+   177→              )}
+   178→            </button>
+   179→          ))}
+   180→        </nav>
+   181→
+   182→        {/* Desktop Search */}
+   183→        <div className="hidden md:flex flex-1 max-w-xs lg:max-w-sm mx-auto" ref={searchRef}>
+   184→          <form onSubmit={handleSearchSubmit} className="relative w-full group">
+   185→            <Search className="absolute left-0 top-1/2 -translate-y-1/2 size-3.5 text-muted-foreground/60 group-focus-within:text-muted-foreground transition-colors" />
+   186→            <Input
+   187→              type="search"
+   188→              placeholder="Search"
+   189→              value={searchValue}
+   190→              onChange={handleSearchChange}
+   191→              onFocus={() => setIsSearchFocused(true)}
+   192→              className="pl-6 pr-8 h-8 text-[13px] border-0 border-b border-border/50 rounded-none bg-transparent focus-visible:ring-0 focus-visible:border-foreground/30 focus-visible:shadow-none placeholder:text-muted-foreground/40 font-light transition-all duration-200"
+   193→              aria-label="Search products"
+   194→            />
+   195→            {searchValue && (
+   196→              <button
+   197→                type="button"
+   198→                onClick={() => {
+   199→                  setSearchValue('');
+   200→                  setSearchSuggestions([]);
+   201→                }}
+   202→                className="absolute right-0 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-foreground transition-colors"
+   203→                aria-label="Clear search"
+   204→              >
+   205→                <X className="size-3" strokeWidth={2} />
+   206→              </button>
+   207→            )}
+   208→            {/* Search Suggestions Dropdown */}
+   209→            {isSearchFocused && searchSuggestions.length > 0 && (
+   210→              <div className="absolute top-full left-0 right-0 mt-1 bg-popover border border-border/50 rounded-xl z-50 overflow-hidden shadow-lg shadow-black/5">
+   211→                {searchSuggestions.map((product) => (
+   212→                  <button
+   213→                    key={product.id}
+   214→                    type="button"
+   215→                    onClick={() => handleSuggestionClick(product)}
+   216→                    className="flex items-center gap-3 w-full px-4 py-2.5 text-left hover:bg-muted/50 transition-colors duration-150"
+   217→                  >
+   218→                    {product.images?.[0]?.url ? (
+   219→                      <img
+   220→                        src={product.images[0].url}
+   221→                        alt={product.name}
+   222→                        className="size-8 rounded-md object-cover shrink-0"
+   223→                      />
+   224→                    ) : (
+   225→                      <div className="size-8 rounded-md bg-muted/50 shrink-0 flex items-center justify-center">
+   226→                        <Package className="size-3 text-muted-foreground/50" />
+   227→                      </div>
+   228→                    )}
+   229→                    <div className="min-w-0 flex-1">
+   230→                      <p className="text-sm font-light truncate">{product.name}</p>
+   231→                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+   232→                        {product.discountPrice ? (
+   233→                          <>
+   234→                            <span className="font-medium text-foreground">
+   235→                              ৳{product.discountPrice.toLocaleString()}
+   236→                            </span>
+   237→                            <span className="line-through opacity-60">৳{product.price.toLocaleString()}</span>
+   238→                          </>
+   239→                        ) : (
+   240→                          <span className="font-medium">৳{product.price.toLocaleString()}</span>
+   241→                        )}
+   242→                      </div>
+   243→                    </div>
+   244→                  </button>
+   245→                ))}
+   246→                <button
+   247→                  type="submit"
+   248→                  className="w-full px-4 py-2.5 text-[13px] text-muted-foreground hover:text-foreground border-t border-border/50 transition-colors duration-150 font-light"
+   249→                >
+   250→                  View all results for &ldquo;{searchValue}&rdquo;
+   251→                </button>
+   252→              </div>
+   253→            )}
+   254→          </form>
+   255→        </div>
+   256→
+   257→        {/* Right Actions */}
+   258→        <div className="flex items-center gap-0.5 ml-auto">
+   259→          {/* Mobile Search Toggle */}
+   260→          <button
+   261→            className="md:hidden p-2 text-muted-foreground hover:text-foreground transition-colors duration-200"
+   262→            onClick={() => setMobileSearchOpen(!mobileSearchOpen)}
+   263→            aria-label="Toggle search"
+   264→          >
+   265→            <Search className="size-[18px]" strokeWidth={1.5} />
+   266→          </button>
+   267→
+   268→          {/* Theme Toggle */}
+   269→          {mounted && (
+   270→            <button
+   271→              className="hidden sm:flex p-2 text-muted-foreground hover:text-foreground transition-colors duration-200"
+   272→              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+   273→              aria-label="Toggle theme"
+   274→            >
+   275→              {theme === 'dark' ? (
+   276→                <Sun className="size-[18px]" strokeWidth={1.5} />
+   277→              ) : (
+   278→                <Moon className="size-[18px]" strokeWidth={1.5} />
+   279→              )}
+   280→            </button>
+   281→          )}
+   282→
+   283→          {/* Wishlist */}
+   284→          <button
+   285→            className="relative p-2 text-muted-foreground hover:text-foreground transition-colors duration-200"
+   286→            onClick={() => navigate('wishlist')}
+   287→            aria-label="Wishlist"
+   288→          >
+   289→            <Heart className="size-[18px]" strokeWidth={1.5} />
+   290→            {wishlistCount > 0 && (
+   291→              <span className="absolute top-1 right-1 min-w-[14px] h-[14px] px-0.5 flex items-center justify-center text-[9px] font-medium leading-none bg-[#5B7553] text-white rounded-full">
+   292→                {wishlistCount > 99 ? '99+' : wishlistCount}
+   293→              </span>
+   294→            )}
+   295→          </button>
+   296→
+   297→          {/* Cart */}
+   298→          <button
+   299→            className="relative p-2 text-muted-foreground hover:text-foreground transition-colors duration-200"
+   300→            onClick={() => navigate('cart')}
+   301→            aria-label="Cart"
+   302→          >
+   303→            <ShoppingCart className="size-[18px]" strokeWidth={1.5} />
+   304→            {cartCount > 0 && (
+   305→              <span className="absolute top-1 right-1 min-w-[14px] h-[14px] px-0.5 flex items-center justify-center text-[9px] font-medium leading-none bg-[#5B7553] text-white rounded-full">
+   306→                {cartCount > 99 ? '99+' : cartCount}
+   307→              </span>
+   308→            )}
+   309→          </button>
+   310→
+   311→          {/* User Menu */}
+   312→          <DropdownMenu>
+   313→            <DropdownMenuTrigger asChild>
+   314→              <button
+   315→                className="p-2 text-muted-foreground hover:text-foreground transition-colors duration-200"
+   316→                aria-label="User menu"
+   317→              >
+   318→                <User className="size-[18px]" strokeWidth={1.5} />
+   319→              </button>
+   320→            </DropdownMenuTrigger>
+   321→            <DropdownMenuContent align="end" className="w-52 rounded-xl border-border/50">
+   322→              {!isAuthenticated ? (
+   323→                <DropdownMenuGroup>
+   324→                  <DropdownMenuLabel className="text-[11px] font-light text-muted-foreground tracking-widest uppercase">
+   325→                    Account
+   326→                  </DropdownMenuLabel>
+   327→                  <DropdownMenuSeparator />
+   328→                  <DropdownMenuItem onClick={() => navigate('login')} className="text-sm cursor-pointer font-light">
+   329→                    Login
+   330→                  </DropdownMenuItem>
+   331→                  <DropdownMenuItem onClick={() => navigate('register')} className="text-sm cursor-pointer font-light">
+   332→                    Register
+   333→                  </DropdownMenuItem>
+   334→                </DropdownMenuGroup>
+   335→              ) : user?.role === 'admin' ? (
+   336→                <DropdownMenuGroup>
+   337→                  <DropdownMenuLabel className="text-xs">
+   338→                    <div className="flex flex-col">
+   339→                      <span className="font-light">{user.name}</span>
+   340→                      <span className="text-[11px] font-light text-muted-foreground mt-0.5">
+   341→                        {user.email}
+   342→                      </span>
+   343→                    </div>
+   344→                  </DropdownMenuLabel>
+   345→                  <DropdownMenuSeparator />
+   346→                  <DropdownMenuItem onClick={() => { window.location.href = '/admin'; }} className="text-sm cursor-pointer font-light">
+   347→                    Admin Dashboard
+   348→                  </DropdownMenuItem>
+   349→                  <DropdownMenuItem onClick={() => navigate('orders')} className="text-sm cursor-pointer font-light">
+   350→                    My Orders
+   351→                  </DropdownMenuItem>
+   352→                  <DropdownMenuSeparator />
+   353→                  <DropdownMenuItem onClick={handleLogout} className="text-sm cursor-pointer text-muted-foreground hover:text-foreground font-light">
+   354→                    Logout
+   355→                  </DropdownMenuItem>
+   356→                </DropdownMenuGroup>
+   357→              ) : (
+   358→                <DropdownMenuGroup>
+   359→                  <DropdownMenuLabel className="text-xs">
+   360→                    <div className="flex flex-col">
+   361→                      <span className="font-light">{user?.name}</span>
+   362→                      <span className="text-[11px] font-light text-muted-foreground mt-0.5">
+   363→                        {user?.email}
+   364→                      </span>
+   365→                    </div>
+   366→                  </DropdownMenuLabel>
+   367→                  <DropdownMenuSeparator />
+   368→                  <DropdownMenuItem onClick={() => navigate('dashboard')} className="text-sm cursor-pointer font-light">
+   369→                    My Account
+   370→                  </DropdownMenuItem>
+   371→                  <DropdownMenuItem onClick={() => navigate('orders')} className="text-sm cursor-pointer font-light">
+   372→                    My Orders
+   373→                  </DropdownMenuItem>
+   374→                  <DropdownMenuItem onClick={() => navigate('wishlist')} className="text-sm cursor-pointer font-light">
+   375→                    Wishlist
+   376→                  </DropdownMenuItem>
+   377→                  <DropdownMenuItem onClick={() => navigate('addresses')} className="text-sm cursor-pointer font-light">
+   378→                    Addresses
+   379→                  </DropdownMenuItem>
+   380→                  <DropdownMenuSeparator />
+   381→                  <DropdownMenuItem onClick={handleLogout} className="text-sm cursor-pointer text-muted-foreground hover:text-foreground font-light">
+   382→                    Logout
+   383→                  </DropdownMenuItem>
+   384→                </DropdownMenuGroup>
+   385→              )}
+   386→            </DropdownMenuContent>
+   387→          </DropdownMenu>
+   388→        </div>
+   389→      </div>
+   390→
+   391→      {/* Mobile Search Bar (Expandable) */}
+   392→      {mobileSearchOpen && (
+   393→        <div className="border-t border-border/50 md:hidden px-5 py-3 bg-background/95 backdrop-blur-xl">
+   394→          <form onSubmit={handleSearchSubmit} className="relative">
+   395→            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-muted-foreground/60" />
+   396→            <Input
+   397→              type="search"
+   398→              placeholder="Search products..."
+   399→              value={searchValue}
+   400→              onChange={handleSearchChange}
+   401→              className="pl-10 pr-10 h-10 rounded-full bg-muted/30 border-border/50 focus-visible:ring-1 focus-visible:ring-[#5B7553]/30 focus-visible:border-[#5B7553]/40 text-sm font-light"
+   402→              autoFocus
+   403→              aria-label="Search products"
+   404→            />
+   405→            {searchValue && (
+   406→              <button
+   407→                type="button"
+   408→                onClick={() => {
+   409→                  setSearchValue('');
+   410→                  setSearchSuggestions([]);
+   411→                }}
+   412→                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted-foreground/50 hover:text-foreground transition-colors"
+   413→                aria-label="Clear search"
+   414→              >
+   415→                <X className="size-4" strokeWidth={2} />
+   416→              </button>
+   417→            )}
+   418→            {searchSuggestions.length > 0 && (
+   419→              <div className="absolute top-full left-0 right-0 mt-2 bg-popover border border-border/50 rounded-xl z-50 max-h-64 overflow-y-auto shadow-lg shadow-black/5">
+   420→                {searchSuggestions.map((product) => (
+   421→                  <button
+   422→                    key={product.id}
+   423→                    type="button"
+   424→                    onClick={() => handleSuggestionClick(product)}
+   425→                    className="flex items-center gap-3 w-full px-4 py-2.5 text-left hover:bg-muted/50 transition-colors duration-150"
+   426→                  >
+   427→                    {product.images?.[0]?.url ? (
+   428→                      <img
+   429→                        src={product.images[0].url}
+   430→                        alt={product.name}
+   431→                        className="size-8 rounded-md object-cover shrink-0"
+   432→                      />
+   433→                    ) : (
+   434→                      <div className="size-8 rounded-md bg-muted/50 shrink-0 flex items-center justify-center">
+   435→                        <Package className="size-3 text-muted-foreground/50" />
+   436→                      </div>
+   437→                    )}
+   438→                    <div className="min-w-0">
+   439→                      <p className="text-sm font-light truncate">{product.name}</p>
+   440→                      <span className="text-xs text-muted-foreground">
+   441→                        ৳{(product.discountPrice ?? product.price).toLocaleString()}
+   442→                      </span>
+   443→                    </div>
+   444→                  </button>
+   445→                ))}
+   446→              </div>
+   447→            )}
+   448→          </form>
+   449→        </div>
+   450→      )}
+   451→
+   452→      {/* Mobile Menu Sheet */}
+   453→      <Sheet open={mobileSheetOpen} onOpenChange={setMobileSheetOpen}>
+   454→        <SheetContent side="left" className="w-[300px] sm:w-[340px] p-0 bg-background/95 backdrop-blur-xl">
+   455→          <SheetHeader className="px-6 pt-6 pb-4 border-b border-border/50">
+   456→            <SheetTitle className="sr-only">Navigation</SheetTitle>
+   457→            {settings.logoUrl ? (
+   458→              <img src={settings.logoUrl} alt={settings.storeName} className="h-7 w-auto object-contain" />
+   459→            ) : (
+   460→              <span className="text-lg font-medium tracking-tight text-foreground">
+   461→                {settings.storeName}
+   462→              </span>
+   463→            )}
+   464→          </SheetHeader>
+   465→
+   466→          {/* Mobile User Info */}
+   467→          {isAuthenticated && user && (
+   468→            <div className="px-6 py-4 border-b border-border/50">
+   469→              <div className="flex items-center gap-3">
+   470→                <div className="size-9 rounded-full bg-muted/50 flex items-center justify-center">
+   471→                  <User className="size-4 text-muted-foreground" strokeWidth={1.5} />
+   472→                </div>
+   473→                <div className="min-w-0">
+   474→                  <p className="text-sm font-light truncate">{user.name}</p>
+   475→                  <p className="text-xs text-muted-foreground truncate">{user.email}</p>
+   476→                </div>
+   477→              </div>
+   478→            </div>
+   479→          )}
+   480→
+   481→          {/* Mobile Navigation */}
+   482→          <nav className="py-2" aria-label="Mobile navigation">
+   483→            <ul>
+   484→              <li>
+   485→                <button
+   486→                  onClick={() => {
+   487→                    navigate('home');
+   488→                    setMobileSheetOpen(false);
+   489→                  }}
+   490→                  className="w-full px-6 py-3 text-left text-sm text-muted-foreground hover:text-foreground transition-colors duration-200 font-light"
+   491→                >
+   492→                  Home
+   493→                </button>
+   494→              </li>
+   495→              <li>
+   496→                <button
+   497→                  onClick={() => {
+   498→                    setCategory(null);
+   499→                    navigate('shop');
+   500→                    setMobileSheetOpen(false);
+   501→                  }}
+   502→                  className="w-full px-6 py-3 text-left text-sm text-muted-foreground hover:text-foreground transition-colors duration-200 font-light"
+   503→                >
+   504→                  All Products
+   505→                </button>
+   506→              </li>
+   507→              <li className="my-1 mx-6 h-px bg-border/50" />
+   508→              {categories.map((category) => (
+   509→                <li key={category.id}>
+   510→                  <button
+   511→                    onClick={() => handleCategoryClick(category)}
+   512→                    className="flex items-center justify-between w-full px-6 py-3 text-left text-sm text-muted-foreground hover:text-foreground transition-colors duration-200 font-light"
+   513→                  >
+   514→                    <span>{category.name}</span>
+   515→                    {category.children && category.children.length > 0 && (
+   516→                      <ChevronDown className="size-3.5 text-muted-foreground/40" strokeWidth={1.5} />
+   517→                    )}
+   518→                  </button>
+   519→                  {/* Subcategories */}
+   520→                  {category.children && category.children.length > 0 && (
+   521→                    <ul className="ml-4">
+   522→                      {category.children.map((child) => (
+   523→                        <li key={child.id}>
+   524→                          <button
+   525→                            onClick={() => handleCategoryClick(child)}
+   526→                            className="w-full px-6 py-2.5 text-left text-[13px] text-muted-foreground/60 hover:text-foreground transition-colors duration-200 font-light"
+   527→                          >
+   528→                            {child.name}
+   529→                          </button>
+   530→                        </li>
+   531→                      ))}
+   532→                    </ul>
+   533→                  )}
+   534→                </li>
+   535→              ))}
+   536→            </ul>
+   537→          </nav>
+   538→
+   539→          {/* Mobile Quick Links */}
+   540→          <div className="mt-auto border-t border-border/50">
+   541→            <ul>
+   542→              {isAuthenticated ? (
+   543→                <>
+   544→                  <li>
+   545→                    <button
+   546→                      onClick={() => {
+   547→                        navigate('dashboard');
+   548→                        setMobileSheetOpen(false);
+   549→                      }}
+   550→                      className="flex items-center gap-3 w-full px-6 py-3 text-left text-sm text-muted-foreground hover:text-foreground transition-colors duration-200 font-light"
+   551→                    >
+   552→                      <User className="size-4" strokeWidth={1.5} />
+   553→                      My Account
+   554→                    </button>
+   555→                  </li>
+   556→                  <li>
+   557→                    <button
+   558→                      onClick={() => {
+   559→                        navigate('orders');
+   560→                        setMobileSheetOpen(false);
+   561→                      }}
+   562→                      className="flex items-center gap-3 w-full px-6 py-3 text-left text-sm text-muted-foreground hover:text-foreground transition-colors duration-200 font-light"
+   563→                    >
+   564→                      <Package className="size-4" strokeWidth={1.5} />
+   565→                      My Orders
+   566→                    </button>
+   567→                  </li>
+   568→                  <li>
+   569→                    <button
+   570→                      onClick={() => {
+   571→                        navigate('addresses');
+   572→                        setMobileSheetOpen(false);
+   573→                      }}
+   574→                      className="flex items-center gap-3 w-full px-6 py-3 text-left text-sm text-muted-foreground hover:text-foreground transition-colors duration-200 font-light"
+   575→                    >
+   576→                      <MapPin className="size-4" strokeWidth={1.5} />
+   577→                      My Addresses
+   578→                    </button>
+   579→                  </li>
+   580→                  <li className="my-1 mx-6 h-px bg-border/50" />
+   581→                  <li>
+   582→                    <button
+   583→                      onClick={() => {
+   584→                        handleLogout();
+   585→                        setMobileSheetOpen(false);
+   586→                      }}
+   587→                      className="w-full px-6 py-3 text-left text-sm text-muted-foreground hover:text-foreground transition-colors duration-200 font-light"
+   588→                    >
+   589→                      Logout
+   590→                    </button>
+   591→                  </li>
+   592→                </>
+   593→              ) : (
+   594→                <>
+   595→                  <li>
+   596→                    <button
+   597→                      onClick={() => {
+   598→                        navigate('login');
+   599→                        setMobileSheetOpen(false);
+   600→                      }}
+   601→                      className="w-full px-6 py-3 text-left text-sm text-muted-foreground hover:text-foreground transition-colors duration-200 font-light"
+   602→                    >
+   603→                      Login
+   604→                    </button>
+   605→                  </li>
+   606→                  <li>
+   607→                    <button
+   608→                      onClick={() => {
+   609→                        navigate('register');
+   610→                        setMobileSheetOpen(false);
+   611→                      }}
+   612→                      className="w-full px-6 py-3 text-left text-sm text-muted-foreground hover:text-foreground transition-colors duration-200 font-light"
+   613→                    >
+   614→                      Register
+   615→                    </button>
+   616→                  </li>
+   617→                </>
+   618→              )}
+   619→            </ul>
+   620→          </div>
+   621→        </SheetContent>
+   622→      </Sheet>
+   623→    </header>
+   624→  );
+   625→}

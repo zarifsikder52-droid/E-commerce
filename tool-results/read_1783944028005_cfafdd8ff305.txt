@@ -1,0 +1,1131 @@
+     1→     1→'use client';
+     2→     2→import { useEffect, useState, useMemo } from 'react';
+     3→     3→import { useUIStore } from '@/store/use-ui';
+     4→     4→import { useAuthStore } from '@/store/use-auth';
+     5→     5→import { useAdminAuth } from '@/store/use-admin-auth';
+     6→     6→import { Button } from '@/components/ui/button';
+     7→     7→import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+     8→     8→import { Input } from '@/components/ui/input';
+     9→     9→import { Label } from '@/components/ui/label';
+    10→    10→import { Badge } from '@/components/ui/badge';
+    11→    11→import { Separator } from '@/components/ui/separator';
+    12→    12→import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+    13→    13→import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+    14→    14→import { Progress } from '@/components/ui/progress';
+    15→    15→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+    16→    16→import { ScrollArea } from '@/components/ui/scroll-area';
+    17→    17→import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from '@/components/ui/sheet';
+    18→    18→import {
+    19→    19→  BarChart, Bar, PieChart, Pie, Cell, AreaChart, Area,
+    20→    20→  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
+    21→    21→} from 'recharts';
+    22→    22→import {
+    23→    23→  DollarSign, ShoppingCart, Users, Package, TrendingUp, TrendingDown,
+    24→    24→  Eye, ArrowUpRight, MoreHorizontal, Search, Filter,
+    25→    25→  Download, RefreshCw, BarChart3, PieChart as PieChartIcon,
+    26→    26→  Tag, MessageSquare, ImageIcon, Settings, Menu, Loader2,
+    27→    27→  AlertTriangle, ChevronRight, Star
+    28→    28→} from 'lucide-react';
+    29→    29→import type { Order, Product, User as AppUser, Coupon, Review } from '@/types';
+    30→    30→
+    31→    31→// ─── Constants ───
+    32→    32→const CHART_COLORS = ['#10b981', '#f59e0b', '#ef4444', '#06b6d4', '#8b5cf6'];
+    33→    33→
+    34→    34→const orderStatusConfig: Record<string, { label: string; color: string }> = {
+    35→    35→  pending: { label: 'Pending', color: 'bg-yellow-100 text-yellow-800 border-yellow-300' },
+    36→    36→  confirmed: { label: 'Confirmed', color: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
+    37→    37→  processing: { label: 'Processing', color: 'bg-orange-100 text-orange-800 border-orange-300' },
+    38→    38→  shipped: { label: 'Shipped', color: 'bg-cyan-100 text-cyan-800 border-cyan-300' },
+    39→    39→  delivered: { label: 'Delivered', color: 'bg-green-100 text-green-800 border-green-300' },
+    40→    40→  cancelled: { label: 'Cancelled', color: 'bg-red-100 text-red-800 border-red-300' },
+    41→    41→};
+    42→    42→
+    43→    43→const roleConfig: Record<string, { label: string; color: string }> = {
+    44→    44→  admin: { label: 'Admin', color: 'bg-red-100 text-red-800 border-red-300' },
+    45→    45→  seller: { label: 'Seller', color: 'bg-orange-100 text-orange-800 border-orange-300' },
+    46→    46→  customer: { label: 'Customer', color: 'bg-emerald-100 text-emerald-800 border-emerald-300' },
+    47→    47→};
+    48→    48→
+    49→    49→type AdminTab = 'overview' | 'orders' | 'products' | 'users' | 'coupons' | 'reviews' | 'settings';
+    50→    50→
+    51→    51→const sidebarItems: { id: AdminTab; label: string; icon: React.ReactNode }[] = [
+    52→    52→  { id: 'overview', label: 'Overview', icon: <BarChart3 className="h-4 w-4" /> },
+    53→    53→  { id: 'orders', label: 'Orders', icon: <ShoppingCart className="h-4 w-4" /> },
+    54→    54→  { id: 'products', label: 'Products', icon: <Package className="h-4 w-4" /> },
+    55→    55→  { id: 'users', label: 'Users', icon: <Users className="h-4 w-4" /> },
+    56→    56→  { id: 'coupons', label: 'Coupons', icon: <Tag className="h-4 w-4" /> },
+    57→    57→  { id: 'reviews', label: 'Reviews', icon: <MessageSquare className="h-4 w-4" /> },
+    58→    58→  { id: 'settings', label: 'Settings', icon: <Settings className="h-4 w-4" /> },
+    59→    59→];
+    60→    60→
+    61→    61→// ─── Custom scrollbar ───
+    62→    62→const scrollbarStyles = `
+    63→    63→  .admin-scroll::-webkit-scrollbar { width: 6px; }
+    64→    64→  .admin-scroll::-webkit-scrollbar-track { background: transparent; }
+    65→    65→  .admin-scroll::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+    66→    66→  .admin-scroll::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+    67→    67→`;
+    68→    68→
+    69→    69→// ─── Format helpers ───
+    70→    70→const formatCurrency = (amount: number) => `৳${amount.toLocaleString()}`;
+    71→    71→const formatDate = (dateStr: string) => new Date(dateStr).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+    72→    72→
+    73→    73→export default function AdminDashboard() {
+    74→    74→  const { user: spaUser, isAuthenticated: spaAuthenticated } = useAuthStore();
+    75→    75→  const { admin, isAuthenticated: adminAuthenticated } = useAdminAuth();
+    76→    76→  const { navigate, analyticsData, setAnalyticsData, dashboardStats, setDashboardStats } = useUIStore();
+    77→    77→
+    78→    78→  // Use admin auth if available, fall back to SPA auth
+    79→    79→  const isAuthenticated = adminAuthenticated || spaAuthenticated;
+    80→    80→  const user = admin || spaUser;
+    81→    81→
+    82→    82→  const [activeTab, setActiveTab] = useState<AdminTab>('overview');
+    83→    83→  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+    84→    84→  const [loading, setLoading] = useState(true);
+    85→    85→
+    86→    86→  // Data
+    87→    87→  const [allOrders, setAllOrders] = useState<Order[]>([]);
+    88→    88→  const [products, setProducts] = useState<Product[]>([]);
+    89→    89→  const [users, setUsers] = useState<AppUser[]>([]);
+    90→    90→  const [coupons, setCoupons] = useState<Coupon[]>([]);
+    91→    91→  const [reviews, setReviews] = useState<Review[]>([]);
+    92→    92→
+    93→    93→  // Filters
+    94→    94→  const [orderSearch, setOrderSearch] = useState('');
+    95→    95→  const [orderStatusFilter, setOrderStatusFilter] = useState('all');
+    96→    96→  const [productSearch, setProductSearch] = useState('');
+    97→    97→  const [orderPage, setOrderPage] = useState(1);
+    98→    98→  const ordersPerPage = 10;
+    99→    99→
+   100→   100→  useEffect(() => {
+   101→   101→    if (!isAuthenticated || !user) return;
+   102→   102→
+   103→   103→    const fetchData = async () => {
+   104→   104→      setLoading(true);
+   105→   105→      try {
+   106→   106→        const [statsRes, analyticsRes, topProductsRes, ordersRes, couponsRes] = await Promise.allSettled([
+   107→   107→          fetch('/api/admin?endpoint=stats').then(r => r.json()),
+   108→   108→          fetch('/api/admin?endpoint=analytics').then(r => r.json()),
+   109→   109→          fetch('/api/products?limit=5&sort=soldCount').then(r => r.json()),
+   110→   110→          fetch('/api/orders?limit=50').then(r => r.json()),
+   111→   111→          fetch('/api/coupons').then(r => r.json()),
+   112→   112→        ]);
+   113→   113→
+   114→   114→        if (statsRes.status === 'fulfilled' && statsRes.value?.stats) {
+   115→   115→          setDashboardStats(statsRes.value.stats);
+   116→   116→        }
+   117→   117→        if (analyticsRes.status === 'fulfilled' && analyticsRes.value?.data) {
+   118→   118→          setAnalyticsData(analyticsRes.value.data);
+   119→   119→        }
+   120→   120→        if (topProductsRes.status === 'fulfilled' && topProductsRes.value?.products) {
+   121→   121→          setProducts(topProductsRes.value.products);
+   122→   122→        }
+   123→   123→        if (ordersRes.status === 'fulfilled' && ordersRes.value?.orders) {
+   124→   124→          setAllOrders(ordersRes.value.orders);
+   125→   125→        }
+   126→   126→        if (couponsRes.status === 'fulfilled' && couponsRes.value?.coupons) {
+   127→   127→          setCoupons(couponsRes.value.coupons);
+   128→   128→        }
+   129→   129→      } catch {
+   130→   130→        // mock data fallback
+   131→   131→      } finally {
+   132→   132→        setLoading(false);
+   133→   133→      }
+   134→   134→    };
+   135→   135→    fetchData();
+   136→   136→  }, [isAuthenticated, user, setAnalyticsData, setDashboardStats]);
+   137→   137→
+   138→   138→  // ─── Computed data (before early return to satisfy hooks rules) ───
+   139→   139→  const filteredOrders = useMemo(() => {
+   140→   140→    let result = allOrders;
+   141→   141→    if (orderStatusFilter !== 'all') {
+   142→   142→      result = result.filter(o => o.status === orderStatusFilter);
+   143→   143→    }
+   144→   144→    if (orderSearch) {
+   145→   145→      const q = orderSearch.toLowerCase();
+   146→   146→      result = result.filter(o =>
+   147→   147→        o.orderNumber.toLowerCase().includes(q) ||
+   148→   148→        o.items.some(i => i.productName.toLowerCase().includes(q))
+   149→   149→      );
+   150→   150→    }
+   151→   151→    return result;
+   152→   152→  }, [allOrders, orderStatusFilter, orderSearch]);
+   153→   153→
+   154→   154→  const paginatedOrders = useMemo(() => {
+   155→   155→    const start = (orderPage - 1) * ordersPerPage;
+   156→   156→    return filteredOrders.slice(start, start + ordersPerPage);
+   157→   157→  }, [filteredOrders, orderPage]);
+   158→   158→
+   159→   159→  const totalOrderPages = Math.ceil(filteredOrders.length / ordersPerPage);
+   160→   160→
+   161→   161→  const filteredProducts = useMemo(() => {
+   162→   162→    if (!productSearch) return products;
+   163→   163→    const q = productSearch.toLowerCase();
+   164→   164→    return products.filter(p => p.name.toLowerCase().includes(q));
+   165→   165→  }, [products, productSearch]);
+   166→   166→
+   167→   167→  const recentOrders = allOrders.slice(0, 5);
+   168→   168→
+   169→   169→  // Pie data for order status distribution
+   170→   170→  const orderStatusPieData = useMemo(() => {
+   171→   171→    const counts: Record<string, number> = {};
+   172→   172→    allOrders.forEach(o => { counts[o.status] = (counts[o.status] || 0) + 1; });
+   173→   173→    return Object.entries(counts).map(([name, value]) => ({
+   174→   174→      name: orderStatusConfig[name]?.label ?? name,
+   175→   175→      value,
+   176→   176→    }));
+   177→   177→  }, [allOrders]);
+   178→   178→
+   179→   179→  // ─── Not authenticated (only show in SPA context, not on /admin route) ───
+   180→   180→  if (!isAuthenticated || !user || user.role !== 'admin') {
+   181→   181→    // On /admin route, the login guard handles this, so return null
+   182→   182→    if (adminAuthenticated || typeof window !== 'undefined' && window.location.pathname === '/admin') {
+   183→   183→      return null;
+   184→   184→    }
+   185→   185→    return (
+   186→   186→      <div className="min-h-[60vh] flex flex-col items-center justify-center gap-6 p-4">
+   187→   187→        <div className="h-24 w-24 rounded-full bg-muted flex items-center justify-center">
+   188→   188→          <AlertTriangle className="h-12 w-12 text-muted-foreground" />
+   189→   189→        </div>
+   190→   190→        <h2 className="text-2xl font-bold">Admin Access Required</h2>
+   191→   191→        <p className="text-muted-foreground text-center max-w-md">
+   192→   192→          You need to be signed in as an administrator to access the admin dashboard.
+   193→   193→        </p>
+   194→   194→        <Button size="lg" onClick={() => navigate('login')} className="gap-2">
+   195→   195→          Sign In
+   196→   196→        </Button>
+   197→   197→      </div>
+   198→   198→    );
+   199→   199→  }
+   200→   200→
+   201→   201→  // ─── Stat card component ───
+   202→   202→  const StatCard = ({ title, value, growth, icon, prefix = '' }: {
+   203→   203→    title: string; value: string; growth: number; icon: React.ReactNode; prefix?: string;
+   204→   204→  }) => (
+   205→   205→    <Card className="hover:shadow-md transition-shadow">
+   206→   206→      <CardContent className="p-4 md:p-6">
+   207→   207→        <div className="flex items-center justify-between">
+   208→   208→          <div className="space-y-1">
+   209→   209→            <p className="text-sm text-muted-foreground font-medium">{title}</p>
+   210→   210→            <p className="text-2xl md:text-3xl font-bold tracking-tight">
+   211→   211→              {prefix}{value}
+   212→   212→            </p>
+   213→   213→          </div>
+   214→   214→          <div className="h-10 w-10 md:h-12 md:w-12 rounded-lg bg-emerald-100 dark:bg-emerald-950 flex items-center justify-center text-emerald-600">
+   215→   215→            {icon}
+   216→   216→          </div>
+   217→   217→        </div>
+   218→   218→        <div className="flex items-center gap-1 mt-2">
+   219→   219→          {growth >= 0 ? (
+   220→   220→            <TrendingUp className="h-3.5 w-3.5 text-emerald-600" />
+   221→   221→          ) : (
+   222→   222→            <TrendingDown className="h-3.5 w-3.5 text-red-500" />
+   223→   223→          )}
+   224→   224→          <span className={`text-xs font-medium ${growth >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+   225→   225→            {Math.abs(growth)}%
+   226→   226→          </span>
+   227→   227→          <span className="text-xs text-muted-foreground">vs last month</span>
+   228→   228→        </div>
+   229→   229→      </CardContent>
+   230→   230→    </Card>
+   231→   231→  );
+   232→   232→
+   233→   233→  // ─── Sidebar content ───
+   234→   234→  const SidebarNav = ({ onNavigate }: { onNavigate?: () => void }) => (
+   235→   235→    <nav className="flex flex-col gap-1 p-2">
+   236→   236→      {sidebarItems.map((item) => (
+   237→   237→        <button
+   238→   238→          key={item.id}
+   239→   239→          onClick={() => { setActiveTab(item.id); onNavigate?.(); }}
+   240→   240→          className={`flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors text-left w-full ${
+   241→   241→            activeTab === item.id
+   242→   242→              ? 'bg-emerald-50 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300'
+   243→   243→              : 'text-muted-foreground hover:bg-muted hover:text-foreground'
+   244→   244→          }`}
+   245→   245→        >
+   246→   246→          {item.icon}
+   247→   247→          {item.label}
+   248→   248→        </button>
+   249→   249→      ))}
+   250→   250→      <Separator className="my-2" />
+   251→   251→      <button
+   252→   252→        onClick={() => { window.location.href = '/'; onNavigate?.(); }}
+   253→   253→        className="flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium text-muted-foreground hover:bg-muted hover:text-foreground transition-colors text-left w-full"
+   254→   254→      >
+   255→   255→        <ArrowUpRight className="h-4 w-4" />
+   256→   256→        View Store
+   257→   257→      </button>
+   258→   258→    </nav>
+   259→   259→  );
+   260→   260→
+   261→   261→  // ─── Stars component ───
+   262→   262→  const StarRating = ({ rating }: { rating: number }) => (
+   263→   263→    <div className="flex items-center gap-0.5">
+   264→   264→      {Array.from({ length: 5 }).map((_, i) => (
+   265→   265→        <Star
+   266→   266→          key={i}
+   267→   267→          className={`h-3.5 w-3.5 ${i < Math.round(rating) ? 'fill-yellow-400 text-yellow-400' : 'text-muted-foreground/30'}`}
+   268→   268→        />
+   269→   269→      ))}
+   270→   270→    </div>
+   271→   271→  );
+   272→   272→
+   273→   273→  return (
+   274→   274→    <>
+   275→   275→      <style>{scrollbarStyles}</style>
+   276→   276→      <div className="w-full">
+   277→   277→        {/* Header */}
+   278→   278→        <div className="flex items-center justify-between mb-4">
+   279→   279→          <h1 className="text-xl md:text-2xl font-bold">Admin Dashboard</h1>
+   280→   280→          <div className="flex items-center gap-2">
+   281→   281→            <Button variant="outline" size="sm" className="gap-1">
+   282→   282→              <RefreshCw className="h-3.5 w-3.5" />
+   283→   283→              <span className="hidden sm:inline">Refresh</span>
+   284→   284→            </Button>
+   285→   285→            <Button variant="outline" size="sm" className="gap-1">
+   286→   286→              <Download className="h-3.5 w-3.5" />
+   287→   287→              <span className="hidden sm:inline">Export</span>
+   288→   288→            </Button>
+   289→   289→          </div>
+   290→   290→        </div>
+   291→   291→
+   292→   292→        <div className="flex flex-col lg:flex-row gap-6">
+   293→   293→          {/* ─── Desktop Sidebar ─── */}
+   294→   294→          <aside className="hidden lg:block w-60 shrink-0">
+   295→   295→            <Card className="sticky top-6">
+   296→   296→              <CardContent className="p-3">
+   297→   297→                <div className="flex items-center gap-3 p-3 mb-2">
+   298→   298→                  <Avatar className="h-10 w-10">
+   299→   299→                    <AvatarFallback className="bg-red-100 text-red-700 font-semibold">
+   300→   300→                      {user.name.charAt(0).toUpperCase()}
+   301→   301→                    </AvatarFallback>
+   302→   302→                  </Avatar>
+   303→   303→                  <div className="min-w-0">
+   304→   304→                    <p className="font-semibold text-sm truncate">{user.name}</p>
+   305→   305→                    <Badge variant="outline" className={roleConfig.admin?.color}>
+   306→   306→                      {roleConfig.admin?.label}
+   307→   307→                    </Badge>
+   308→   308→                  </div>
+   309→   309→                </div>
+   310→   310→                <ScrollArea>
+   311→   311→                  <SidebarNav />
+   312→   312→                </ScrollArea>
+   313→   313→              </CardContent>
+   314→   314→            </Card>
+   315→   315→          </aside>
+   316→   316→
+   317→   317→          {/* ─── Mobile Nav ─── */}
+   318→   318→          <div className="lg:hidden">
+   319→   319→            <Sheet open={isMobileNavOpen} onOpenChange={setIsMobileNavOpen}>
+   320→   320→              <SheetTrigger asChild>
+   321→   321→                <Button variant="outline" size="sm" className="gap-2 mb-4">
+   322→   322→                  <Menu className="h-4 w-4" />
+   323→   323→                  Navigation
+   324→   324→                </Button>
+   325→   325→              </SheetTrigger>
+   326→   326→              <SheetContent side="left" className="w-60 p-0">
+   327→   327→                <SheetHeader className="p-4 pb-2">
+   328→   328→                  <SheetTitle className="text-left">Admin Panel</SheetTitle>
+   329→   329→                </SheetHeader>
+   330→   330→                <div className="flex items-center gap-3 px-4 py-2">
+   331→   331→                  <Avatar className="h-10 w-10">
+   332→   332→                    <AvatarFallback className="bg-red-100 text-red-700 font-semibold">
+   333→   333→                      {user.name.charAt(0).toUpperCase()}
+   334→   334→                    </AvatarFallback>
+   335→   335→                  </Avatar>
+   336→   336→                  <div className="min-w-0">
+   337→   337→                    <p className="font-semibold text-sm truncate">{user.name}</p>
+   338→   338→                    <Badge variant="outline" className={roleConfig.admin?.color}>
+   339→   339→                      {roleConfig.admin?.label}
+   340→   340→                    </Badge>
+   341→   341→                  </div>
+   342→   342→                </div>
+   343→   343→                <SidebarNav onNavigate={() => setIsMobileNavOpen(false)} />
+   344→   344→              </SheetContent>
+   345→   345→            </Sheet>
+   346→   346→          </div>
+   347→   347→
+   348→   348→          {/* ─── Main Content ─── */}
+   349→   349→          <main className="flex-1 min-w-0">
+   350→   350→            {loading ? (
+   351→   351→              <div className="flex items-center justify-center py-20">
+   352→   352→                <Loader2 className="h-8 w-8 animate-spin text-emerald-500" />
+   353→   353→              </div>
+   354→   354→            ) : (
+   355→   355→              <>
+   356→   356→
+   357→   357→                {/* ════════════════════════════════════════════
+   358→   358→                    OVERVIEW TAB
+   359→   359→                ════════════════════════════════════════════ */}
+   360→   360→                {activeTab === 'overview' && (
+   361→   361→                  <div className="space-y-6">
+   362→   362→                    {/* Stat Cards */}
+   363→   363→                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+   364→   364→                      <StatCard
+   365→   365→                        title="Total Revenue"
+   366→   366→                        value={dashboardStats.totalRevenue.toLocaleString()}
+   367→   367→                        growth={dashboardStats.revenueGrowth}
+   368→   368→                        prefix="৳"
+   369→   369→                        icon={<DollarSign className="h-5 w-5 md:h-6 md:w-6" />}
+   370→   370→                      />
+   371→   371→                      <StatCard
+   372→   372→                        title="Total Orders"
+   373→   373→                        value={dashboardStats.totalOrders.toLocaleString()}
+   374→   374→                        growth={dashboardStats.orderGrowth}
+   375→   375→                        icon={<ShoppingCart className="h-5 w-5 md:h-6 md:w-6" />}
+   376→   376→                      />
+   377→   377→                      <StatCard
+   378→   378→                        title="Total Users"
+   379→   379→                        value={dashboardStats.totalUsers.toLocaleString()}
+   380→   380→                        growth={dashboardStats.userGrowth}
+   381→   381→                        icon={<Users className="h-5 w-5 md:h-6 md:w-6" />}
+   382→   382→                      />
+   383→   383→                      <StatCard
+   384→   384→                        title="Total Products"
+   385→   385→                        value={dashboardStats.totalProducts.toLocaleString()}
+   386→   386→                        growth={dashboardStats.productGrowth}
+   387→   387→                        icon={<Package className="h-5 w-5 md:h-6 md:w-6" />}
+   388→   388→                      />
+   389→   389→                    </div>
+   390→   390→
+   391→   391→                    {/* Charts Row */}
+   392→   392→                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+   393→   393→                      {/* Revenue Chart */}
+   394→   394→                      <Card>
+   395→   395→                        <CardHeader className="pb-2">
+   396→   396→                          <CardTitle className="text-base">Revenue Trend</CardTitle>
+   397→   397→                          <CardDescription>Revenue over the past 30 days</CardDescription>
+   398→   398→                        </CardHeader>
+   399→   399→                        <CardContent>
+   400→   400→                          {analyticsData.length > 0 ? (
+   401→   401→                            <ResponsiveContainer width="100%" height={300}>
+   402→   402→                              <AreaChart data={analyticsData}>
+   403→   403→                                <defs>
+   404→   404→                                  <linearGradient id="revenueGrad" x1="0" y1="0" x2="0" y2="1">
+   405→   405→                                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.3} />
+   406→   406→                                    <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+   407→   407→                                  </linearGradient>
+   408→   408→                                </defs>
+   409→   409→                                <CartesianGrid strokeDasharray="3 3" />
+   410→   410→                                <XAxis
+   411→   411→                                  dataKey="date"
+   412→   412→                                  tick={{ fontSize: 11 }}
+   413→   413→                                  tickFormatter={(v) => new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+   414→   414→                                  interval="preserveStartEnd"
+   415→   415→                                />
+   416→   416→                                <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `৳${(v / 1000).toFixed(0)}k`} />
+   417→   417→                                <Tooltip
+   418→   418→                                  formatter={(value: number, name: string) => [
+   419→   419→                                    name === 'revenue' ? formatCurrency(value) : value,
+   420→   420→                                    name === 'revenue' ? 'Revenue' : 'Orders'
+   421→   421→                                  ]}
+   422→   422→                                  labelFormatter={(label) => new Date(label as string).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+   423→   423→                                />
+   424→   424→                                <Area
+   425→   425→                                  type="monotone"
+   426→   426→                                  dataKey="revenue"
+   427→   427→                                  stroke="#10b981"
+   428→   428→                                  fill="url(#revenueGrad)"
+   429→   429→                                  strokeWidth={2}
+   430→   430→                                  name="revenue"
+   431→   431→                                />
+   432→   432→                              </AreaChart>
+   433→   433→                            </ResponsiveContainer>
+   434→   434→                          ) : (
+   435→   435→                            <div className="h-[300px] flex items-center justify-center text-muted-foreground text-sm">
+   436→   436→                              No analytics data available
+   437→   437→                            </div>
+   438→   438→                          )}
+   439→   439→                        </CardContent>
+   440→   440→                      </Card>
+   441→   441→
+   442→   442→                      {/* Orders Chart */}
+   443→   443→                      <Card>
+   444→   444→                        <CardHeader className="pb-2">
+   445→   445→                          <CardTitle className="text-base">Daily Orders</CardTitle>
+   446→   446→                          <CardDescription>Order volume over the past 30 days</CardDescription>
+   447→   447→                        </CardHeader>
+   448→   448→                        <CardContent>
+   449→   449→                          {analyticsData.length > 0 ? (
+   450→   450→                            <ResponsiveContainer width="100%" height={300}>
+   451→   451→                              <BarChart data={analyticsData}>
+   452→   452→                                <CartesianGrid strokeDasharray="3 3" />
+   453→   453→                                <XAxis
+   454→   454→                                  dataKey="date"
+   455→   455→                                  tick={{ fontSize: 11 }}
+   456→   456→                                  tickFormatter={(v) => new Date(v).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+   457→   457→                                  interval="preserveStartEnd"
+   458→   458→                                />
+   459→   459→                                <YAxis tick={{ fontSize: 11 }} />
+   460→   460→                                <Tooltip
+   461→   461→                                  formatter={(value: number) => [value, 'Orders']}
+   462→   462→                                  labelFormatter={(label) => new Date(label as string).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+   463→   463→                                />
+   464→   464→                                <Bar dataKey="orders" fill="#f59e0b" radius={[4, 4, 0, 0]} name="orders" />
+   465→   465→                              </BarChart>
+   466→   466→                            </ResponsiveContainer>
+   467→   467→                          ) : (
+   468→   468→                            <div className="h-[300px] flex items-center justify-center text-muted-foreground text-sm">
+   469→   469→                              No analytics data available
+   470→   470→                            </div>
+   471→   471→                          )}
+   472→   472→                        </CardContent>
+   473→   473→                      </Card>
+   474→   474→                    </div>
+   475→   475→
+   476→   476→                    {/* Bottom Row: Recent Orders + Top Products + Order Status Pie */}
+   477→   477→                    <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+   478→   478→                      {/* Recent Orders Table */}
+   479→   479→                      <Card className="xl:col-span-2">
+   480→   480→                        <CardHeader className="pb-2">
+   481→   481→                          <div className="flex items-center justify-between">
+   482→   482→                            <div>
+   483→   483→                              <CardTitle className="text-base">Recent Orders</CardTitle>
+   484→   484→                              <CardDescription>Latest 5 orders</CardDescription>
+   485→   485→                            </div>
+   486→   486→                            <Button variant="outline" size="sm" className="gap-1" onClick={() => setActiveTab('orders')}>
+   487→   487→                              View All
+   488→   488→                              <ChevronRight className="h-3.5 w-3.5" />
+   489→   489→                            </Button>
+   490→   490→                          </div>
+   491→   491→                        </CardHeader>
+   492→   492→                        <CardContent>
+   493→   493→                          {recentOrders.length === 0 ? (
+   494→   494→                            <p className="text-sm text-muted-foreground text-center py-8">No orders yet</p>
+   495→   495→                          ) : (
+   496→   496→                            <ScrollArea className="max-h-96">
+   497→   497→                              <Table>
+   498→   498→                                <TableHeader>
+   499→   499→                                  <TableRow>
+   500→   500→                                    <TableHead>Order #</TableHead>
+   501→   501→                                    <TableHead className="hidden sm:table-cell">Date</TableHead>
+   502→   502→                                    <TableHead>Total</TableHead>
+   503→   503→                                    <TableHead>Status</TableHead>
+   504→   504→                                    <TableHead className="text-right">Action</TableHead>
+   505→   505→                                  </TableRow>
+   506→   506→                                </TableHeader>
+   507→   507→                                <TableBody>
+   508→   508→                                  {recentOrders.map((order) => (
+   509→   509→                                    <TableRow key={order.id}>
+   510→   510→                                      <TableCell className="font-mono text-sm font-medium">#{order.orderNumber}</TableCell>
+   511→   511→                                      <TableCell className="hidden sm:table-cell text-sm">{formatDate(order.createdAt)}</TableCell>
+   512→   512→                                      <TableCell className="font-semibold text-sm">{formatCurrency(order.total)}</TableCell>
+   513→   513→                                      <TableCell>
+   514→   514→                                        <Badge variant="outline" className={orderStatusConfig[order.status]?.color ?? ''}>
+   515→   515→                                          {orderStatusConfig[order.status]?.label ?? order.status}
+   516→   516→                                        </Badge>
+   517→   517→                                      </TableCell>
+   518→   518→                                      <TableCell className="text-right">
+   519→   519→                                        <Button variant="ghost" size="sm">
+   520→   520→                                          <Eye className="h-4 w-4" />
+   521→   521→                                        </Button>
+   522→   522→                                      </TableCell>
+   523→   523→                                    </TableRow>
+   524→   524→                                  ))}
+   525→   525→                                </TableBody>
+   526→   526→                              </Table>
+   527→   527→                            </ScrollArea>
+   528→   528→                          )}
+   529→   529→                        </CardContent>
+   530→   530→                      </Card>
+   531→   531→
+   532→   532→                      {/* Order Status Pie + Top Products */}
+   533→   533→                      <div className="space-y-6">
+   534→   534→                        {/* Order Status Pie */}
+   535→   535→                        <Card>
+   536→   536→                          <CardHeader className="pb-2">
+   537→   537→                            <CardTitle className="text-base">Order Status</CardTitle>
+   538→   538→                          </CardHeader>
+   539→   539→                          <CardContent>
+   540→   540→                            {orderStatusPieData.length > 0 ? (
+   541→   541→                              <ResponsiveContainer width="100%" height={200}>
+   542→   542→                                <PieChart>
+   543→   543→                                  <Pie
+   544→   544→                                    data={orderStatusPieData}
+   545→   545→                                    cx="50%"
+   546→   546→                                    cy="50%"
+   547→   547→                                    innerRadius={50}
+   548→   548→                                    outerRadius={80}
+   549→   549→                                    paddingAngle={3}
+   550→   550→                                    dataKey="value"
+   551→   551→                                  >
+   552→   552→                                    {orderStatusPieData.map((_, index) => (
+   553→   553→                                      <Cell key={`cell-${index}`} fill={CHART_COLORS[index % CHART_COLORS.length]} />
+   554→   554→                                    ))}
+   555→   555→                                  </Pie>
+   556→   556→                                  <Tooltip />
+   557→   557→                                </PieChart>
+   558→   558→                              </ResponsiveContainer>
+   559→   559→                            ) : (
+   560→   560→                              <div className="h-[200px] flex items-center justify-center text-muted-foreground text-sm">
+   561→   561→                                No data
+   562→   562→                              </div>
+   563→   563→                            )}
+   564→   564→                            <div className="flex flex-wrap gap-2 mt-2">
+   565→   565→                              {orderStatusPieData.map((entry, index) => (
+   566→   566→                                <div key={entry.name} className="flex items-center gap-1.5 text-xs">
+   567→   567→                                  <span className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: CHART_COLORS[index % CHART_COLORS.length] }} />
+   568→   568→                                  <span className="text-muted-foreground">{entry.name} ({entry.value})</span>
+   569→   569→                                </div>
+   570→   570→                              ))}
+   571→   571→                            </div>
+   572→   572→                          </CardContent>
+   573→   573→                        </Card>
+   574→   574→
+   575→   575→                        {/* Top Products */}
+   576→   576→                        <Card>
+   577→   577→                          <CardHeader className="pb-2">
+   578→   578→                            <CardTitle className="text-base">Top Products</CardTitle>
+   579→   579→                            <CardDescription>By sales count</CardDescription>
+   580→   580→                          </CardHeader>
+   581→   581→                          <CardContent>
+   582→   582→                            {products.length === 0 ? (
+   583→   583→                              <p className="text-sm text-muted-foreground text-center py-4">No products</p>
+   584→   584→                            ) : (
+   585→   585→                              <div className="space-y-3">
+   586→   586→                                {products.slice(0, 5).map((product, idx) => (
+   587→   587→                                  <div key={product.id} className="flex items-center gap-3">
+   588→   588→                                    <span className="text-sm font-bold text-muted-foreground w-5">#{idx + 1}</span>
+   589→   589→                                    <div className="h-10 w-10 rounded-md bg-muted flex items-center justify-center shrink-0 overflow-hidden">
+   590→   590→                                      {product.images?.[0] ? (
+   591→   591→                                        <img src={product.images[0].url} alt={product.name} className="h-full w-full object-cover" />
+   592→   592→                                      ) : (
+   593→   593→                                        <Package className="h-4 w-4 text-muted-foreground/40" />
+   594→   594→                                      )}
+   595→   595→                                    </div>
+   596→   596→                                    <div className="flex-1 min-w-0">
+   597→   597→                                      <p className="text-sm font-medium truncate">{product.name}</p>
+   598→   598→                                      <p className="text-xs text-muted-foreground">{product.soldCount} sold</p>
+   599→   599→                                    </div>
+   600→   600→                                    <span className="text-sm font-semibold text-emerald-600">{formatCurrency(product.price)}</span>
+   601→   601→                                  </div>
+   602→   602→                                ))}
+   603→   603→                              </div>
+   604→   604→                            )}
+   605→   605→                          </CardContent>
+   606→   606→                        </Card>
+   607→   607→                      </div>
+   608→   608→                    </div>
+   609→   609→                  </div>
+   610→   610→                )}
+   611→   611→
+   612→   612→                {/* ════════════════════════════════════════════
+   613→   613→                    ORDERS TAB
+   614→   614→                ════════════════════════════════════════════ */}
+   615→   615→                {activeTab === 'orders' && (
+   616→   616→                  <Card>
+   617→   617→                    <CardHeader>
+   618→   618→                      <CardTitle>All Orders</CardTitle>
+   619→   619→                      <CardDescription>Manage and track all customer orders</CardDescription>
+   620→   620→                    </CardHeader>
+   621→   621→                    <CardContent className="space-y-4">
+   622→   622→                      {/* Search & Filter */}
+   623→   623→                      <div className="flex flex-col sm:flex-row gap-3">
+   624→   624→                        <div className="relative flex-1">
+   625→   625→                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   626→   626→                          <Input
+   627→   627→                            placeholder="Search by order # or product name..."
+   628→   628→                            value={orderSearch}
+   629→   629→                            onChange={(e) => { setOrderSearch(e.target.value); setOrderPage(1); }}
+   630→   630→                            className="pl-9"
+   631→   631→                          />
+   632→   632→                        </div>
+   633→   633→                        <Select value={orderStatusFilter} onValueChange={(v) => { setOrderStatusFilter(v); setOrderPage(1); }}>
+   634→   634→                          <SelectTrigger className="w-full sm:w-44">
+   635→   635→                            <Filter className="h-4 w-4 mr-2 text-muted-foreground" />
+   636→   636→                            <SelectValue placeholder="Filter status" />
+   637→   637→                          </SelectTrigger>
+   638→   638→                          <SelectContent>
+   639→   639→                            <SelectItem value="all">All Statuses</SelectItem>
+   640→   640→                            <SelectItem value="pending">Pending</SelectItem>
+   641→   641→                            <SelectItem value="confirmed">Confirmed</SelectItem>
+   642→   642→                            <SelectItem value="processing">Processing</SelectItem>
+   643→   643→                            <SelectItem value="shipped">Shipped</SelectItem>
+   644→   644→                            <SelectItem value="delivered">Delivered</SelectItem>
+   645→   645→                            <SelectItem value="cancelled">Cancelled</SelectItem>
+   646→   646→                          </SelectContent>
+   647→   647→                        </Select>
+   648→   648→                      </div>
+   649→   649→
+   650→   650→                      {/* Orders Table */}
+   651→   651→                      {filteredOrders.length === 0 ? (
+   652→   652→                        <div className="text-center py-12 text-muted-foreground text-sm">
+   653→   653→                          No orders found matching your criteria.
+   654→   654→                        </div>
+   655→   655→                      ) : (
+   656→   656→                        <>
+   657→   657→                          <ScrollArea className="max-h-96">
+   658→   658→                            <Table>
+   659→   659→                              <TableHeader>
+   660→   660→                                <TableRow>
+   661→   661→                                  <TableHead>Order #</TableHead>
+   662→   662→                                  <TableHead className="hidden md:table-cell">Items</TableHead>
+   663→   663→                                  <TableHead>Total</TableHead>
+   664→   664→                                  <TableHead className="hidden sm:table-cell">Payment</TableHead>
+   665→   665→                                  <TableHead>Status</TableHead>
+   666→   666→                                  <TableHead className="hidden lg:table-cell">Date</TableHead>
+   667→   667→                                  <TableHead className="text-right">Actions</TableHead>
+   668→   668→                                </TableRow>
+   669→   669→                              </TableHeader>
+   670→   670→                              <TableBody>
+   671→   671→                                {paginatedOrders.map((order) => (
+   672→   672→                                  <TableRow key={order.id}>
+   673→   673→                                    <TableCell className="font-mono text-sm font-medium">#{order.orderNumber}</TableCell>
+   674→   674→                                    <TableCell className="hidden md:table-cell text-sm">{order.items.length} item{order.items.length > 1 ? 's' : ''}</TableCell>
+   675→   675→                                    <TableCell className="font-semibold text-sm">{formatCurrency(order.total)}</TableCell>
+   676→   676→                                    <TableCell className="hidden sm:table-cell">
+   677→   677→                                      <Badge variant="outline" className={order.paymentStatus === 'paid' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-yellow-50 text-yellow-700 border-yellow-200'}>
+   678→   678→                                        {order.paymentStatus}
+   679→   679→                                      </Badge>
+   680→   680→                                    </TableCell>
+   681→   681→                                    <TableCell>
+   682→   682→                                      <Select value={order.status} onValueChange={(v) => {
+   683→   683→                                        setAllOrders(prev => prev.map(o => o.id === order.id ? { ...o, status: v } : o));
+   684→   684→                                      }}>
+   685→   685→                                        <SelectTrigger className={`h-7 w-28 text-xs ${orderStatusConfig[order.status]?.color}`}>
+   686→   686→                                          <SelectValue />
+   687→   687→                                        </SelectTrigger>
+   688→   688→                                        <SelectContent>
+   689→   689→                                          {Object.entries(orderStatusConfig).map(([key, cfg]) => (
+   690→   690→                                            <SelectItem key={key} value={key}>{cfg.label}</SelectItem>
+   691→   691→                                          ))}
+   692→   692→                                        </SelectContent>
+   693→   693→                                      </Select>
+   694→   694→                                    </TableCell>
+   695→   695→                                    <TableCell className="hidden lg:table-cell text-sm">{formatDate(order.createdAt)}</TableCell>
+   696→   696→                                    <TableCell className="text-right">
+   697→   697→                                      <Button variant="ghost" size="sm">
+   698→   698→                                        <Eye className="h-4 w-4" />
+   699→   699→                                      </Button>
+   700→   700→                                    </TableCell>
+   701→   701→                                  </TableRow>
+   702→   702→                                ))}
+   703→   703→                              </TableBody>
+   704→   704→                            </Table>
+   705→   705→                          </ScrollArea>
+   706→   706→
+   707→   707→                          {/* Pagination */}
+   708→   708→                          {totalOrderPages > 1 && (
+   709→   709→                            <div className="flex items-center justify-between pt-3">
+   710→   710→                              <p className="text-sm text-muted-foreground">
+   711→   711→                                Showing {(orderPage - 1) * ordersPerPage + 1}–{Math.min(orderPage * ordersPerPage, filteredOrders.length)} of {filteredOrders.length}
+   712→   712→                              </p>
+   713→   713→                              <div className="flex items-center gap-1">
+   714→   714→                                <Button
+   715→   715→                                  variant="outline" size="sm" disabled={orderPage <= 1}
+   716→   716→                                  onClick={() => setOrderPage(p => p - 1)}
+   717→   717→                                >
+   718→   718→                                  Previous
+   719→   719→                                </Button>
+   720→   720→                                {Array.from({ length: Math.min(totalOrderPages, 5) }, (_, i) => {
+   721→   721→                                  const pageNum = i + 1;
+   722→   722→                                  return (
+   723→   723→                                    <Button
+   724→   724→                                      key={pageNum}
+   725→   725→                                      variant={orderPage === pageNum ? 'default' : 'outline'}
+   726→   726→                                      size="sm"
+   727→   727→                                      className="w-8 h-8 p-0"
+   728→   728→                                      onClick={() => setOrderPage(pageNum)}
+   729→   729→                                    >
+   730→   730→                                      {pageNum}
+   731→   731→                                    </Button>
+   732→   732→                                  );
+   733→   733→                                })}
+   734→   734→                                {totalOrderPages > 5 && <span className="text-muted-foreground text-sm px-1">...</span>}
+   735→   735→                                <Button
+   736→   736→                                  variant="outline" size="sm" disabled={orderPage >= totalOrderPages}
+   737→   737→                                  onClick={() => setOrderPage(p => p + 1)}
+   738→   738→                                >
+   739→   739→                                  Next
+   740→   740→                                </Button>
+   741→   741→                              </div>
+   742→   742→                            </div>
+   743→   743→                          )}
+   744→   744→                        </>
+   745→   745→                      )}
+   746→   746→                    </CardContent>
+   747→   747→                  </Card>
+   748→   748→                )}
+   749→   749→
+   750→   750→                {/* ════════════════════════════════════════════
+   751→   751→                    PRODUCTS TAB
+   752→   752→                ════════════════════════════════════════════ */}
+   753→   753→                {activeTab === 'products' && (
+   754→   754→                  <Card>
+   755→   755→                    <CardHeader>
+   756→   756→                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+   757→   757→                        <div>
+   758→   758→                          <CardTitle>Products</CardTitle>
+   759→   759→                          <CardDescription>Manage your product catalog</CardDescription>
+   760→   760→                        </div>
+   761→   761→                        <div className="relative w-full sm:w-72">
+   762→   762→                          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+   763→   763→                          <Input
+   764→   764→                            placeholder="Search products..."
+   765→   765→                            value={productSearch}
+   766→   766→                            onChange={(e) => setProductSearch(e.target.value)}
+   767→   767→                            className="pl-9"
+   768→   768→                          />
+   769→   769→                        </div>
+   770→   770→                      </div>
+   771→   771→                    </CardHeader>
+   772→   772→                    <CardContent>
+   773→   773→                      {filteredProducts.length === 0 ? (
+   774→   774→                        <div className="text-center py-12 text-muted-foreground text-sm">
+   775→   775→                          No products found.
+   776→   776→                        </div>
+   777→   777→                      ) : (
+   778→   778→                        <ScrollArea className="max-h-96">
+   779→   779→                          <Table>
+   780→   780→                            <TableHeader>
+   781→   781→                              <TableRow>
+   782→   782→                                <TableHead className="w-12"></TableHead>
+   783→   783→                                <TableHead>Name</TableHead>
+   784→   784→                                <TableHead className="hidden md:table-cell">Category</TableHead>
+   785→   785→                                <TableHead>Price</TableHead>
+   786→   786→                                <TableHead className="hidden sm:table-cell">Stock</TableHead>
+   787→   787→                                <TableHead>Status</TableHead>
+   788→   788→                                <TableHead className="text-right">Actions</TableHead>
+   789→   789→                              </TableRow>
+   790→   790→                            </TableHeader>
+   791→   791→                            <TableBody>
+   792→   792→                              {filteredProducts.map((product) => (
+   793→   793→                                <TableRow key={product.id}>
+   794→   794→                                  <TableCell>
+   795→   795→                                    <div className="h-10 w-10 rounded-md bg-muted flex items-center justify-center overflow-hidden">
+   796→   796→                                      {product.images?.[0] ? (
+   797→   797→                                        <img src={product.images[0].url} alt={product.name} className="h-full w-full object-cover" />
+   798→   798→                                      ) : (
+   799→   799→                                        <ImageIcon className="h-4 w-4 text-muted-foreground/40" />
+   800→   800→                                      )}
+   801→   801→                                    </div>
+   802→   802→                                  </TableCell>
+   803→   803→                                  <TableCell>
+   804→   804→                                    <div>
+   805→   805→                                      <p className="font-medium text-sm line-clamp-1">{product.name}</p>
+   806→   806→                                      <p className="text-xs text-muted-foreground md:hidden">{product.category?.name}</p>
+   807→   807→                                    </div>
+   808→   808→                                  </TableCell>
+   809→   809→                                  <TableCell className="hidden md:table-cell text-sm">
+   810→   810→                                    {product.category?.name ?? '—'}
+   811→   811→                                  </TableCell>
+   812→   812→                                  <TableCell>
+   813→   813→                                    <div>
+   814→   814→                                      <span className="font-semibold text-sm">{formatCurrency(product.discountPrice ?? product.price)}</span>
+   815→   815→                                      {product.discountPrice && (
+   816→   816→                                        <span className="text-xs text-muted-foreground line-through ml-1">{formatCurrency(product.price)}</span>
+   817→   817→                                      )}
+   818→   818→                                    </div>
+   819→   819→                                  </TableCell>
+   820→   820→                                  <TableCell className="hidden sm:table-cell">
+   821→   821→                                    <div className="space-y-1">
+   822→   822→                                      <span className="text-sm font-medium">{product.stock}</span>
+   823→   823→                                      {product.stock > 0 && product.stock <= 10 && (
+   824→   824→                                        <p className="text-xs text-yellow-600">Low stock</p>
+   825→   825→                                      )}
+   826→   826→                                    </div>
+   827→   827→                                  </TableCell>
+   828→   828→                                  <TableCell>
+   829→   829→                                    {product.status === 'active' ? (
+   830→   830→                                      product.stock > 10 ? (
+   831→   831→                                        <Badge className="bg-emerald-100 text-emerald-800 border-emerald-300 hover:bg-emerald-100">In Stock</Badge>
+   832→   832→                                      ) : product.stock > 0 ? (
+   833→   833→                                        <Badge className="bg-yellow-100 text-yellow-800 border-yellow-300 hover:bg-yellow-100">Low Stock</Badge>
+   834→   834→                                      ) : (
+   835→   835→                                        <Badge className="bg-red-100 text-red-800 border-red-300 hover:bg-red-100">Out of Stock</Badge>
+   836→   836→                                      )
+   837→   837→                                    ) : (
+   838→   838→                                      <Badge variant="outline">Inactive</Badge>
+   839→   839→                                    )}
+   840→   840→                                  </TableCell>
+   841→   841→                                  <TableCell className="text-right">
+   842→   842→                                    <Button variant="ghost" size="sm">
+   843→   843→                                      <Eye className="h-4 w-4" />
+   844→   844→                                    </Button>
+   845→   845→                                  </TableCell>
+   846→   846→                                </TableRow>
+   847→   847→                              ))}
+   848→   848→                            </TableBody>
+   849→   849→                          </Table>
+   850→   850→                        </ScrollArea>
+   851→   851→                      )}
+   852→   852→                    </CardContent>
+   853→   853→                  </Card>
+   854→   854→                )}
+   855→   855→
+   856→   856→                {/* ════════════════════════════════════════════
+   857→   857→                    USERS TAB
+   858→   858→                ════════════════════════════════════════════ */}
+   859→   859→                {activeTab === 'users' && (
+   860→   860→                  <Card>
+   861→   861→                    <CardHeader>
+   862→   862→                      <CardTitle>Users</CardTitle>
+   863→   863→                      <CardDescription>Manage registered users</CardDescription>
+   864→   864→                    </CardHeader>
+   865→   865→                    <CardContent>
+   866→   866→                      {users.length === 0 ? (
+   867→   867→                        <div className="flex flex-col items-center justify-center py-12 text-center">
+   868→   868→                          <Users className="h-16 w-16 text-muted-foreground/30 mb-4" />
+   869→   869→                          <h3 className="font-semibold text-lg mb-1">No users data</h3>
+   870→   870→                          <p className="text-muted-foreground text-sm">User data will appear here when the API is connected.</p>
+   871→   871→                        </div>
+   872→   872→                      ) : (
+   873→   873→                        <ScrollArea className="max-h-96">
+   874→   874→                          <Table>
+   875→   875→                            <TableHeader>
+   876→   876→                              <TableRow>
+   877→   877→                                <TableHead>User</TableHead>
+   878→   878→                                <TableHead className="hidden sm:table-cell">Email</TableHead>
+   879→   879→                                <TableHead>Role</TableHead>
+   880→   880→                                <TableHead className="hidden md:table-cell">Status</TableHead>
+   881→   881→                                <TableHead className="hidden lg:table-cell">Joined</TableHead>
+   882→   882→                                <TableHead className="text-right">Actions</TableHead>
+   883→   883→                              </TableRow>
+   884→   884→                            </TableHeader>
+   885→   885→                            <TableBody>
+   886→   886→                              {users.map((u) => (
+   887→   887→                                <TableRow key={u.id}>
+   888→   888→                                  <TableCell>
+   889→   889→                                    <div className="flex items-center gap-3">
+   890→   890→                                      <Avatar className="h-8 w-8">
+   891→   891→                                        <AvatarFallback className="text-xs">{u.name.charAt(0).toUpperCase()}</AvatarFallback>
+   892→   892→                                      </Avatar>
+   893→   893→                                      <span className="font-medium text-sm">{u.name}</span>
+   894→   894→                                    </div>
+   895→   895→                                  </TableCell>
+   896→   896→                                  <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">{u.email}</TableCell>
+   897→   897→                                  <TableCell>
+   898→   898→                                    <Badge variant="outline" className={roleConfig[u.role]?.color ?? ''}>
+   899→   899→                                      {roleConfig[u.role]?.label ?? u.role}
+   900→   900→                                    </Badge>
+   901→   901→                                  </TableCell>
+   902→   902→                                  <TableCell className="hidden md:table-cell">
+   903→   903→                                    <Badge variant={u.isActive ? 'default' : 'outline'} className={u.isActive ? 'bg-emerald-500' : ''}>
+   904→   904→                                      {u.isActive ? 'Active' : 'Inactive'}
+   905→   905→                                    </Badge>
+   906→   906→                                  </TableCell>
+   907→   907→                                  <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">—</TableCell>
+   908→   908→                                  <TableCell className="text-right">
+   909→   909→                                    <Button variant="ghost" size="sm">
+   910→   910→                                      <MoreHorizontal className="h-4 w-4" />
+   911→   911→                                    </Button>
+   912→   912→                                  </TableCell>
+   913→   913→                                </TableRow>
+   914→   914→                              ))}
+   915→   915→                            </TableBody>
+   916→   916→                          </Table>
+   917→   917→                        </ScrollArea>
+   918→   918→                      )}
+   919→   919→                    </CardContent>
+   920→   920→                  </Card>
+   921→   921→                )}
+   922→   922→
+   923→   923→                {/* ════════════════════════════════════════════
+   924→   924→                    COUPONS TAB
+   925→   925→                ════════════════════════════════════════════ */}
+   926→   926→                {activeTab === 'coupons' && (
+   927→   927→                  <Card>
+   928→   928→                    <CardHeader>
+   929→   929→                      <div className="flex items-center justify-between">
+   930→   930→                        <div>
+   931→   931→                          <CardTitle>Coupons</CardTitle>
+   932→   932→                          <CardDescription>Manage discount coupons and promotions</CardDescription>
+   933→   933→                        </div>
+   934→   934→                        <Button size="sm" className="gap-1">
+   935→   935→                          <Tag className="h-4 w-4" />
+   936→   936→                          Create Coupon
+   937→   937→                        </Button>
+   938→   938→                      </div>
+   939→   939→                    </CardHeader>
+   940→   940→                    <CardContent>
+   941→   941→                      {coupons.length === 0 ? (
+   942→   942→                        <div className="flex flex-col items-center justify-center py-12 text-center">
+   943→   943→                          <Tag className="h-16 w-16 text-muted-foreground/30 mb-4" />
+   944→   944→                          <h3 className="font-semibold text-lg mb-1">No coupons</h3>
+   945→   945→                          <p className="text-muted-foreground text-sm">Create your first discount coupon</p>
+   946→   946→                        </div>
+   947→   947→                      ) : (
+   948→   948→                        <ScrollArea className="max-h-96">
+   949→   949→                          <Table>
+   950→   950→                            <TableHeader>
+   951→   951→                              <TableRow>
+   952→   952→                                <TableHead>Code</TableHead>
+   953→   953→                                <TableHead>Type</TableHead>
+   954→   954→                                <TableHead>Value</TableHead>
+   955→   955→                                <TableHead className="hidden sm:table-cell">Min Purchase</TableHead>
+   956→   956→                                <TableHead className="hidden md:table-cell">Used / Limit</TableHead>
+   957→   957→                                <TableHead>Status</TableHead>
+   958→   958→                                <TableHead className="text-right">Actions</TableHead>
+   959→   959→                              </TableRow>
+   960→   960→                            </TableHeader>
+   961→   961→                            <TableBody>
+   962→   962→                              {coupons.map((coupon) => (
+   963→   963→                                <TableRow key={coupon.id}>
+   964→   964→                                  <TableCell>
+   965→   965→                                    <code className="bg-muted px-2 py-1 rounded text-sm font-mono font-semibold">{coupon.code}</code>
+   966→   966→                                  </TableCell>
+   967→   967→                                  <TableCell className="text-sm capitalize">{coupon.type}</TableCell>
+   968→   968→                                  <TableCell className="font-semibold text-sm">
+   969→   969→                                    {coupon.type === 'percentage' ? `${coupon.value}%` : formatCurrency(coupon.value)}
+   970→   970→                                  </TableCell>
+   971→   971→                                  <TableCell className="hidden sm:table-cell text-sm">
+   972→   972→                                    {coupon.minPurchase ? formatCurrency(coupon.minPurchase) : '—'}
+   973→   973→                                  </TableCell>
+   974→   974→                                  <TableCell className="hidden md:table-cell">
+   975→   975→                                    <div className="flex items-center gap-2">
+   976→   976→                                      <Progress value={coupon.usageLimit ? (coupon.usedCount / coupon.usageLimit) * 100 : 0} className="h-2 w-16" />
+   977→   977→                                      <span className="text-xs text-muted-foreground">{coupon.usedCount}{coupon.usageLimit ? `/${coupon.usageLimit}` : ''}</span>
+   978→   978→                                    </div>
+   979→   979→                                  </TableCell>
+   980→   980→                                  <TableCell>
+   981→   981→                                    <Badge variant={coupon.status === 'active' ? 'default' : 'outline'} className={coupon.status === 'active' ? 'bg-emerald-500' : ''}>
+   982→   982→                                      {coupon.status}
+   983→   983→                                    </Badge>
+   984→   984→                                  </TableCell>
+   985→   985→                                  <TableCell className="text-right">
+   986→   986→                                    <Button variant="ghost" size="sm">
+   987→   987→                                      <MoreHorizontal className="h-4 w-4" />
+   988→   988→                                    </Button>
+   989→   989→                                  </TableCell>
+   990→   990→                                </TableRow>
+   991→   991→                              ))}
+   992→   992→                            </TableBody>
+   993→   993→                          </Table>
+   994→   994→                        </ScrollArea>
+   995→   995→                      )}
+   996→   996→                    </CardContent>
+   997→   997→                  </Card>
+   998→   998→                )}
+   999→   999→
+  1000→  1000→                {/* ════════════════════════════════════════════
+  1001→  1001→                    REVIEWS TAB
+  1002→  1002→                ════════════════════════════════════════════ */}
+  1003→  1003→                {activeTab === 'reviews' && (
+  1004→  1004→                  <Card>
+  1005→  1005→                    <CardHeader>
+  1006→  1006→                      <CardTitle>Reviews</CardTitle>
+  1007→  1007→                      <CardDescription>Monitor and manage customer reviews</CardDescription>
+  1008→  1008→                    </CardHeader>
+  1009→  1009→                    <CardContent>
+  1010→  1010→                      {reviews.length === 0 ? (
+  1011→  1011→                        <div className="flex flex-col items-center justify-center py-12 text-center">
+  1012→  1012→                          <MessageSquare className="h-16 w-16 text-muted-foreground/30 mb-4" />
+  1013→  1013→                          <h3 className="font-semibold text-lg mb-1">No reviews yet</h3>
+  1014→  1014→                          <p className="text-muted-foreground text-sm">Customer reviews will appear here</p>
+  1015→  1015→                        </div>
+  1016→  1016→                      ) : (
+  1017→  1017→                        <ScrollArea className="max-h-96">
+  1018→  1018→                          <Table>
+  1019→  1019→                            <TableHeader>
+  1020→  1020→                              <TableRow>
+  1021→  1021→                                <TableHead className="hidden lg:table-cell">Product</TableHead>
+  1022→  1022→                                <TableHead>User</TableHead>
+  1023→  1023→                                <TableHead>Rating</TableHead>
+  1024→  1024→                                <TableHead className="hidden md:table-cell">Comment</TableHead>
+  1025→  1025→                                <TableHead>Status</TableHead>
+  1026→  1026→                                <TableHead className="hidden sm:table-cell">Date</TableHead>
+  1027→  1027→                                <TableHead className="text-right">Actions</TableHead>
+  1028→  1028→                              </TableRow>
+  1029→  1029→                            </TableHeader>
+  1030→  1030→                            <TableBody>
+  1031→  1031→                              {reviews.map((review) => (
+  1032→  1032→                                <TableRow key={review.id}>
+  1033→  1033→                                  <TableCell className="hidden lg:table-cell text-sm font-medium">Product #{review.productId.slice(0, 8)}</TableCell>
+  1034→  1034→                                  <TableCell>
+  1035→  1035→                                    <div className="flex items-center gap-2">
+  1036→  1036→                                      <Avatar className="h-7 w-7">
+  1037→  1037→                                        <AvatarFallback className="text-xs">{review.user.name.charAt(0).toUpperCase()}</AvatarFallback>
+  1038→  1038→                                      </Avatar>
+  1039→  1039→                                      <span className="text-sm">{review.user.name}</span>
+  1040→  1040→                                    </div>
+  1041→  1041→                                  </TableCell>
+  1042→  1042→                                  <TableCell>
+  1043→  1043→                                    <div className="flex items-center gap-1">
+  1044→  1044→                                      <StarRating rating={review.rating} />
+  1045→  1045→                                      <span className="text-xs text-muted-foreground ml-1">({review.rating})</span>
+  1046→  1046→                                    </div>
+  1047→  1047→                                  </TableCell>
+  1048→  1048→                                  <TableCell className="hidden md:table-cell text-sm text-muted-foreground max-w-48 truncate">
+  1049→  1049→                                    {review.comment || '—'}
+  1050→  1050→                                  </TableCell>
+  1051→  1051→                                  <TableCell>
+  1052→  1052→                                    <Badge variant={review.isVerified ? 'default' : 'outline'} className={review.isVerified ? 'bg-emerald-500' : ''}>
+  1053→  1053→                                      {review.isVerified ? 'Verified' : 'Pending'}
+  1054→  1054→                                    </Badge>
+  1055→  1055→                                  </TableCell>
+  1056→  1056→                                  <TableCell className="hidden sm:table-cell text-sm text-muted-foreground">
+  1057→  1057→                                    {formatDate(review.createdAt)}
+  1058→  1058→                                  </TableCell>
+  1059→  1059→                                  <TableCell className="text-right">
+  1060→  1060→                                    <Button variant="ghost" size="sm">
+  1061→  1061→                                      <MoreHorizontal className="h-4 w-4" />
+  1062→  1062→                                    </Button>
+  1063→  1063→                                  </TableCell>
+  1064→  1064→                                </TableRow>
+  1065→  1065→                              ))}
+  1066→  1066→                            </TableBody>
+  1067→  1067→                          </Table>
+  1068→  1068→                        </ScrollArea>
+  1069→  1069→                      )}
+  1070→  1070→                    </CardContent>
+  1071→  1071→                  </Card>
+  1072→  1072→                )}
+  1073→  1073→
+  1074→  1074→                {/* ════════════════════════════════════════════
+  1075→  1075→                    SETTINGS TAB
+  1076→  1076→                ════════════════════════════════════════════ */}
+  1077→  1077→                {activeTab === 'settings' && (
+  1078→  1078→                  <div className="space-y-6">
+  1079→  1079→                    <Card>
+  1080→  1080→                      <CardHeader>
+  1081→  1081→                        <CardTitle>General Settings</CardTitle>
+  1082→  1082→                        <CardDescription>Configure your store settings</CardDescription>
+  1083→  1083→                      </CardHeader>
+  1084→  1084→                      <CardContent className="space-y-4">
+  1085→  1085→                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl">
+  1086→  1086→                          <div className="space-y-2">
+  1087→  1087→                            <Label>Store Name</Label>
+  1088→  1088→                            <Input defaultValue="NextShop" />
+  1089→  1089→                          </div>
+  1090→  1090→                          <div className="space-y-2">
+  1091→  1091→                            <Label>Currency</Label>
+  1092→  1092→                            <Input defaultValue="BDT (৳)" />
+  1093→  1093→                          </div>
+  1094→  1094→                          <div className="space-y-2">
+  1095→  1095→                            <Label>Default Shipping Rate</Label>
+  1096→  1096→                            <Input defaultValue="60" />
+  1097→  1097→                          </div>
+  1098→  1098→                          <div className="space-y-2">
+  1099→  1099→                            <Label>Tax Rate (%)</Label>
+  1100→  1100→                            <Input defaultValue="0" />
+  1101→  1101→                          </div>
+  1102→  1102→                        </div>
+  1103→  1103→                        <Button className="mt-2">Save Settings</Button>
+  1104→  1104→                      </CardContent>
+  1105→  1105→                    </Card>
+  1106→  1106→
+  1107→  1107→                    <Card>
+  1108→  1108→                      <CardHeader>
+  1109→  1109→                        <CardTitle>Danger Zone</CardTitle>
+  1110→  1110→                        <CardDescription>Irreversible and destructive actions</CardDescription>
+  1111→  1111→                      </CardHeader>
+  1112→  1112→                      <CardContent>
+  1113→  1113→                        <div className="rounded-lg border border-red-200 dark:border-red-900 p-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+  1114→  1114→                          <div>
+  1115→  1115→                            <p className="font-medium text-sm">Reset All Data</p>
+  1116→  1116→                            <p className="text-xs text-muted-foreground">This will permanently delete all products, orders, and user data.</p>
+  1117→  1117→                          </div>
+  1118→  1118→                          <Button variant="destructive" size="sm" className="shrink-0">Reset Data</Button>
+  1119→  1119→                        </div>
+  1120→  1120→                      </CardContent>
+  1121→  1121→                    </Card>
+  1122→  1122→                  </div>
+  1123→  1123→                )}
+  1124→  1124→              </>
+  1125→  1125→            )}
+  1126→  1126→          </main>
+  1127→  1127→        </div>
+  1128→  1128→      </div>
+  1129→  1129→    </>
+  1130→  1130→  );
+  1131→  1131→}

@@ -1,0 +1,858 @@
+     1→'use client';
+     2→
+     3→import { useEffect, useState, useCallback, useRef } from 'react';
+     4→import { useUIStore } from '@/store/use-ui';
+     5→import { useCartStore } from '@/store/use-cart';
+     6→import { useWishlistStore } from '@/store/use-wishlist';
+     7→import { Button } from '@/components/ui/button';
+     8→import { Card, CardContent } from '@/components/ui/card';
+     9→import { Badge } from '@/components/ui/badge';
+    10→import {
+    11→  Carousel,
+    12→  CarouselContent,
+    13→  CarouselItem,
+    14→  CarouselNext,
+    15→  CarouselPrevious,
+    16→  type CarouselApi,
+    17→} from '@/components/ui/carousel';
+    18→import { Input } from '@/components/ui/input';
+    19→import { Progress } from '@/components/ui/progress';
+    20→import ProductCard from './ProductCard';
+    21→import type { Product, Category, Brand } from '@/types';
+    22→import { motion } from 'framer-motion';
+    23→import {
+    24→  ArrowRight,
+    25→  Zap,
+    26→  TrendingUp,
+    27→  Star,
+    28→  Truck,
+    29→  Shield,
+    30→  RotateCcw,
+    31→  Headphones,
+    32→  ChevronRight,
+    33→  Clock,
+    34→  Flame,
+    35→} from 'lucide-react';
+    36→
+    37→// ===== Helper Functions =====
+    38→
+    39→function formatPrice(price: number): string {
+    40→  return `৳${price.toLocaleString()}`;
+    41→}
+    42→
+    43→function getDiscountPercent(price: number, discountPrice: number): number {
+    44→  if (price <= 0) return 0;
+    45→  return Math.round(((price - discountPrice) / price) * 100);
+    46→}
+    47→
+    48→// ===== Reusable Section Title =====
+    49→
+    50→function SectionTitle({
+    51→  title,
+    52→  icon: Icon,
+    53→  action,
+    54→  actionLabel,
+    55→}: {
+    56→  title: string;
+    57→  icon?: React.ElementType;
+    58→  action?: () => void;
+    59→  actionLabel?: string;
+    60→}) {
+    61→  return (
+    62→    <div className="flex items-center justify-between mb-6 md:mb-8">
+    63→      <div className="flex items-center gap-2">
+    64→        {Icon && <Icon className="h-5 w-5 text-emerald-600" />}
+    65→        <h2 className="text-xl md:text-2xl font-bold text-foreground">{title}</h2>
+    66→      </div>
+    67→      {action && actionLabel && (
+    68→        <Button
+    69→          variant="ghost"
+    70→          className="text-emerald-600 hover:text-emerald-700 hover:bg-emerald-50 text-sm gap-1"
+    71→          onClick={action}
+    72→        >
+    73→          {actionLabel}
+    74→          <ChevronRight className="h-4 w-4" />
+    75→        </Button>
+    76→      )}
+    77→    </div>
+    78→  );
+    79→}
+    80→
+    81→// ===== Hero Slide Data =====
+    82→
+    83→const heroSlides = [
+    84→  {
+    85→    title: 'Summer Sale Up to 50% Off',
+    86→    subtitle: 'Discover amazing deals on electronics, fashion, and more. Limited time offer!',
+    87→    cta: 'Shop Now',
+    88→    ctaAction: 'shop' as const,
+    89→    gradient: 'from-emerald-600 to-teal-500',
+    90→    pattern: 'radial-gradient(circle at 20% 80%, rgba(255,255,255,0.15) 0%, transparent 50%), radial-gradient(circle at 80% 20%, rgba(255,255,255,0.1) 0%, transparent 50%)',
+    91→  },
+    92→  {
+    93→    title: 'New Arrivals in Electronics',
+    94→    subtitle: 'Explore the latest gadgets and tech accessories. Stay ahead of the curve!',
+    95→    cta: 'Explore',
+    96→    ctaAction: 'shop' as const,
+    97→    gradient: 'from-orange-500 to-red-500',
+    98→    pattern: 'radial-gradient(circle at 70% 70%, rgba(255,255,255,0.15) 0%, transparent 50%), radial-gradient(circle at 30% 30%, rgba(255,255,255,0.1) 0%, transparent 50%)',
+    99→  },
+   100→  {
+   101→    title: 'Free Shipping on Orders Above ৳2,000',
+   102→    subtitle: 'Shop with confidence and enjoy free delivery across Bangladesh.',
+   103→    cta: 'Shop Now',
+   104→    ctaAction: 'shop' as const,
+   105→    gradient: 'from-rose-500 to-pink-500',
+   106→    pattern: 'radial-gradient(circle at 50% 50%, rgba(255,255,255,0.12) 0%, transparent 60%)',
+   107→  },
+   108→  {
+   109→    title: 'Premium Quality at Best Prices',
+   110→    subtitle: 'Authentic products from top brands. 100% genuine guarantee.',
+   111→    cta: 'Browse Products',
+   112→    ctaAction: 'shop' as const,
+   113→    gradient: 'from-amber-500 to-orange-500',
+   114→    pattern: 'radial-gradient(circle at 80% 80%, rgba(255,255,255,0.15) 0%, transparent 50%), radial-gradient(circle at 20% 20%, rgba(255,255,255,0.1) 0%, transparent 50%)',
+   115→  },
+   116→];
+   117→
+   118→// ===== Feature Icons Data =====
+   119→
+   120→const features = [
+   121→  {
+   122→    icon: Truck,
+   123→    title: 'Free Shipping',
+   124→    description: 'On orders above ৳2,000',
+   125→  },
+   126→  {
+   127→    icon: Shield,
+   128→    title: 'Secure Payment',
+   129→    description: '100% protected checkout',
+   130→  },
+   131→  {
+   132→    icon: RotateCcw,
+   133→    title: 'Easy Returns',
+   134→    description: '7-day return policy',
+   135→  },
+   136→  {
+   137→    icon: Headphones,
+   138→    title: '24/7 Support',
+   139→    description: 'Dedicated customer service',
+   140→  },
+   141→];
+   142→
+   143→// ===== Category Gradient Fallbacks =====
+   144→
+   145→const categoryGradients = [
+   146→  'from-emerald-500 to-teal-400',
+   147→  'from-orange-500 to-amber-400',
+   148→  'from-rose-500 to-pink-400',
+   149→  'from-amber-500 to-yellow-400',
+   150→  'from-teal-500 to-cyan-400',
+   151→  'from-red-500 to-orange-400',
+   152→  'from-emerald-600 to-green-400',
+   153→  'from-orange-600 to-red-400',
+   154→];
+   155→
+   156→// ===== Main Component =====
+   157→
+   158→export default function HomePage() {
+   159→  const {
+   160→    categories,
+   161→    featuredProducts,
+   162→    trendingProducts,
+   163→    bestSellerProducts,
+   164→    newArrivalProducts,
+   165→    flashSaleProducts,
+   166→    brands,
+   167→    navigate,
+   168→    setCategories,
+   169→    setFeaturedProducts,
+   170→    setTrendingProducts,
+   171→    setBestSellerProducts,
+   172→    setNewArrivalProducts,
+   173→    setFlashSaleProducts,
+   174→    setBrands,
+   175→    setCategory,
+   176→  } = useUIStore();
+   177→
+   178→  const [countdown, setCountdown] = useState({ hours: 5, minutes: 42, seconds: 18 });
+   179→  const [email, setEmail] = useState('');
+   180→  const [subscribed, setSubscribed] = useState(false);
+   181→  const [api, setApi] = useState<CarouselApi>();
+   182→  const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+   183→
+   184→  // ===== Fetch Data on Mount =====
+   185→
+   186→  useEffect(() => {
+   187→    const fetchData = async () => {
+   188→      try {
+   189→        const [catRes, featRes, trendRes, bestRes, newRes, flashRes, brandRes] =
+   190→          await Promise.allSettled([
+   191→            fetch('/api/categories?parentOnly=true'),
+   192→            fetch('/api/products?featured=true&limit=8'),
+   193→            fetch('/api/products?trending=true&limit=8'),
+   194→            fetch('/api/products?bestSeller=true&limit=8'),
+   195→            fetch('/api/products?newArrival=true&limit=8'),
+   196→            fetch('/api/products?onSale=true&limit=8'),
+   197→            fetch('/api/brands'),
+   198→          ]);
+   199→
+   200→        if (catRes.status === 'fulfilled') {
+   201→          const data = await catRes.value.json();
+   202→          if (data.categories) setCategories(data.categories);
+   203→          else if (Array.isArray(data)) setCategories(data);
+   204→        }
+   205→        if (featRes.status === 'fulfilled') {
+   206→          const data = await featRes.value.json();
+   207→          if (data.products) setFeaturedProducts(data.products);
+   208→          else if (Array.isArray(data)) setFeaturedProducts(data);
+   209→        }
+   210→        if (trendRes.status === 'fulfilled') {
+   211→          const data = await trendRes.value.json();
+   212→          if (data.products) setTrendingProducts(data.products);
+   213→          else if (Array.isArray(data)) setTrendingProducts(data);
+   214→        }
+   215→        if (bestRes.status === 'fulfilled') {
+   216→          const data = await bestRes.value.json();
+   217→          if (data.products) setBestSellerProducts(data.products);
+   218→          else if (Array.isArray(data)) setBestSellerProducts(data);
+   219→        }
+   220→        if (newRes.status === 'fulfilled') {
+   221→          const data = await newRes.value.json();
+   222→          if (data.products) setNewArrivalProducts(data.products);
+   223→          else if (Array.isArray(data)) setNewArrivalProducts(data);
+   224→        }
+   225→        if (flashRes.status === 'fulfilled') {
+   226→          const data = await flashRes.value.json();
+   227→          if (data.products) setFlashSaleProducts(data.products);
+   228→          else if (Array.isArray(data)) setFlashSaleProducts(data);
+   229→        }
+   230→        if (brandRes.status === 'fulfilled') {
+   231→          const data = await brandRes.value.json();
+   232→          if (data.brands) setBrands(data.brands);
+   233→          else if (Array.isArray(data)) setBrands(data);
+   234→        }
+   235→      } catch {
+   236→        // Silently handle fetch errors
+   237→      }
+   238→    };
+   239→    fetchData();
+   240→  }, [setCategories, setFeaturedProducts, setTrendingProducts, setBestSellerProducts, setNewArrivalProducts, setFlashSaleProducts, setBrands]);
+   241→
+   242→  // ===== Auto-advance Carousel =====
+   243→
+   244→  useEffect(() => {
+   245→    if (!api) return;
+   246→    intervalRef.current = setInterval(() => {
+   247→      api.scrollNext();
+   248→    }, 5000);
+   249→    return () => {
+   250→      if (intervalRef.current) clearInterval(intervalRef.current);
+   251→    };
+   252→  }, [api]);
+   253→
+   254→  // ===== Countdown Timer =====
+   255→
+   256→  useEffect(() => {
+   257→    const timer = setInterval(() => {
+   258→      setCountdown((prev) => {
+   259→        let { hours, minutes, seconds } = prev;
+   260→        seconds -= 1;
+   261→        if (seconds < 0) {
+   262→          seconds = 59;
+   263→          minutes -= 1;
+   264→        }
+   265→        if (minutes < 0) {
+   266→          minutes = 59;
+   267→          hours -= 1;
+   268→        }
+   269→        if (hours < 0) {
+   270→          return { hours: 5, minutes: 59, seconds: 59 };
+   271→        }
+   272→        return { hours, minutes, seconds };
+   273→      });
+   274→    }, 1000);
+   275→    return () => clearInterval(timer);
+   276→  }, []);
+   277→
+   278→  // ===== Handlers =====
+   279→
+   280→  const handleCategoryClick = useCallback(
+   281→    (categoryId: string) => {
+   282→      setCategory(categoryId);
+   283→      navigate('shop');
+   284→    },
+   285→    [setCategory, navigate]
+   286→  );
+   287→
+   288→  const handleSubscribe = useCallback(() => {
+   289→    if (email.trim()) {
+   290→      setSubscribed(true);
+   291→      setEmail('');
+   292→      setTimeout(() => setSubscribed(false), 3000);
+   293→    }
+   294→  }, [email]);
+   295→
+   296→  // ===== Render =====
+   297→
+   298→  return (
+   299→    <div className="min-h-screen bg-background">
+   300→      {/* ===== Section 1: Hero Banner Carousel ===== */}
+   301→      <section className="relative w-full" aria-label="Hero Banner">
+   302→        <Carousel
+   303→          setApi={setApi}
+   304→          opts={{ loop: true }}
+   305→          className="w-full"
+   306→        >
+   307→          <CarouselContent>
+   308→            {heroSlides.map((slide, idx) => (
+   309→              <CarouselItem key={idx}>
+   310→                <div
+   311→                  className={`relative bg-gradient-to-r ${slide.gradient} min-h-[320px] sm:min-h-[400px] md:min-h-[480px] flex items-center overflow-hidden`}
+   312→                >
+   313→                  {/* Background Pattern */}
+   314→                  <div
+   315→                    className="absolute inset-0"
+   316→                    style={{ backgroundImage: slide.pattern }}
+   317→                  />
+   318→                  {/* Decorative circles */}
+   319→                  <div className="absolute -right-20 -top-20 h-64 w-64 rounded-full bg-white/10 blur-3xl" />
+   320→                  <div className="absolute -left-10 -bottom-16 h-48 w-48 rounded-full bg-white/10 blur-3xl" />
+   321→                  <div className="absolute right-1/4 bottom-10 h-32 w-32 rounded-full bg-white/5 blur-2xl" />
+   322→
+   323→                  <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 md:py-20 w-full">
+   324→                    <motion.div
+   325→                      initial={{ opacity: 0, x: -30 }}
+   326→                      animate={{ opacity: 1, x: 0 }}
+   327→                      transition={{ duration: 0.6, delay: idx * 0.1 }}
+   328→                      className="max-w-xl"
+   329→                    >
+   330→                      <Badge className="bg-white/20 text-white border-white/30 backdrop-blur-sm mb-4 text-xs">
+   331→                        <Zap className="h-3 w-3 mr-1" />
+   332→                        Limited Time Offer
+   333→                      </Badge>
+   334→                      <h1 className="text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold text-white leading-tight mb-4">
+   335→                        {slide.title}
+   336→                      </h1>
+   337→                      <p className="text-base sm:text-lg text-white/85 mb-6 md:mb-8 max-w-md">
+   338→                        {slide.subtitle}
+   339→                      </p>
+   340→                      <Button
+   341→                        size="lg"
+   342→                        className="bg-white text-gray-900 hover:bg-white/90 font-semibold shadow-lg shadow-black/10 h-11 px-8 text-sm"
+   343→                        onClick={() => navigate(slide.ctaAction)}
+   344→                      >
+   345→                        {slide.cta}
+   346→                        <ArrowRight className="ml-2 h-4 w-4" />
+   347→                      </Button>
+   348→                    </motion.div>
+   349→                  </div>
+   350→                </div>
+   351→              </CarouselItem>
+   352→            ))}
+   353→          </CarouselContent>
+   354→          <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 hidden md:flex gap-1.5">
+   355→            {[0, 1, 2, 3].map((i) => (
+   356→              <div
+   357→                key={i}
+   358→                className="w-2 h-2 rounded-full bg-white/50"
+   359→              />
+   360→            ))}
+   361→          </div>
+   362→          <CarouselPrevious className="left-3 md:-left-12 bg-white/20 border-white/30 text-white hover:bg-white/30 backdrop-blur-sm" />
+   363→          <CarouselNext className="right-3 md:-right-12 bg-white/20 border-white/30 text-white hover:bg-white/30 backdrop-blur-sm" />
+   364→        </Carousel>
+   365→      </section>
+   366→
+   367→      {/* ===== Section 2: Feature Icons Bar ===== */}
+   368→      <section className="bg-muted/40 border-y border-border/50" aria-label="Features">
+   369→        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+   370→          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 py-6 md:py-8">
+   371→            {features.map((feature, idx) => (
+   372→              <motion.div
+   373→                key={idx}
+   374→                initial={{ opacity: 0, y: 10 }}
+   375→                animate={{ opacity: 1, y: 0 }}
+   376→                transition={{ duration: 0.4, delay: idx * 0.1 }}
+   377→                className="flex items-center gap-3 p-3"
+   378→              >
+   379→                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-100 text-emerald-600">
+   380→                  <feature.icon className="h-5 w-5" />
+   381→                </div>
+   382→                <div className="min-w-0">
+   383→                  <p className="text-sm font-semibold text-foreground">{feature.title}</p>
+   384→                  <p className="text-xs text-muted-foreground truncate">{feature.description}</p>
+   385→                </div>
+   386→              </motion.div>
+   387→            ))}
+   388→          </div>
+   389→        </div>
+   390→      </section>
+   391→
+   392→      {/* ===== Section 3: Flash Sale ===== */}
+   393→      {flashSaleProducts.length > 0 && (
+   394→        <section className="py-12 md:py-16" aria-label="Flash Sale">
+   395→          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+   396→            <motion.div
+   397→              initial={{ opacity: 0, y: 20 }}
+   398→              whileInView={{ opacity: 1, y: 0 }}
+   399→              viewport={{ once: true }}
+   400→              transition={{ duration: 0.5 }}
+   401→            >
+   402→              <div className="flex flex-col sm:flex-row sm:items-center justify-between mb-6 md:mb-8 gap-4">
+   403→                <div className="flex items-center gap-3">
+   404→                  <Flame className="h-6 w-6 text-orange-500" />
+   405→                  <h2 className="text-xl md:text-2xl font-bold text-foreground">Flash Sale</h2>
+   406→                  <div className="flex items-center gap-1 ml-2">
+   407→                    <Clock className="h-4 w-4 text-orange-500" />
+   408→                    <div className="flex gap-1">
+   409→                      {[
+   410→                        { value: countdown.hours, label: 'h' },
+   411→                        { value: countdown.minutes, label: 'm' },
+   412→                        { value: countdown.seconds, label: 's' },
+   413→                      ].map((unit, i) => (
+   414→                        <span key={i} className="flex items-center gap-1">
+   415→                          <span className="inline-flex items-center justify-center h-7 w-7 rounded-md bg-orange-500 text-white text-xs font-bold">
+   416→                            {String(unit.value).padStart(2, '0')}
+   417→                          </span>
+   418→                          <span className="text-xs text-muted-">{unit.label}</span>
+   419→                          {i < 2 && <span className="text-orange-500 font-bold text-xs">:</span>}
+   420→                        </span>
+   421→                      ))}
+   422→                    </div>
+   423→                  </div>
+   424→                </div>
+   425→                <Button
+   426→                  variant="ghost"
+   427→                  className="text-orange-600 hover:text-orange-700 hover:bg-orange-50 text-sm gap-1"
+   428→                  onClick={() => navigate('shop')}
+   429→                >
+   430→                  View All
+   431→                  <ChevronRight className="h-4 w-4" />
+   432→                </Button>
+   433→              </div>
+   434→
+   435→              <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide snap-x snap-mandatory -mx-4 px-4">
+   436→                {flashSaleProducts.map((product) => {
+   437→                  const hasDiscount = product.discountPrice !== undefined && product.discountPrice < product.price;
+   438→                  const discountPct = hasDiscount ? getDiscountPercent(product.price, product.discountPrice!) : 0;
+   439→                  const stockPercent = Math.min(100, (product.stock / Math.max(product.stock + 5, 1)) * 100);
+   440→                  const mainImage = product.images?.[0]?.url;
+   441→
+   442→                  return (
+   443→                    <Card
+   444→                      key={product.id}
+   445→                      className="shrink-0 w-48 sm:w-52 md:w-56 snap-start border-orange-200/50 bg-white overflow-hidden group cursor-pointer transition-all duration-300 hover:shadow-md"
+   446→                      onClick={() => useUIStore.getState().viewProduct(product.id)}
+   447→                    >
+   448→                      <div className="relative aspect-square overflow-hidden bg-muted/50">
+   449→                        {mainImage ? (
+   450→                          <img
+   451→                            src={mainImage}
+   452→                            alt={product.name}
+   453→                            className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+   454→                          />
+   455→                        ) : (
+   456→                          <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-orange-50 to-amber-50">
+   457→                            <Zap className="h-8 w-8 text-orange-200" />
+   458→                          </div>
+   459→                        )}
+   460→                        {hasDiscount && (
+   461→                          <Badge className="absolute top-2 left-2 bg-red-500 text-white text-[10px] px-1.5 py-0.5">
+   462→                            -{discountPct}%
+   463→                          </Badge>
+   464→                        )}
+   465→                      </div>
+   466→                      <CardContent className="p-3">
+   467→                        <h3 className="text-xs font-medium text-foreground line-clamp-2 mb-2 min-h-[2rem]">
+   468→                          {product.name}
+   469→                        </h3>
+   470→                        <div className="flex items-center gap-1.5 mb-2">
+   471→                          <span className="text-sm font-bold text-orange-600">
+   472→                            {formatPrice(product.discountPrice ?? product.price)}
+   473→                          </span>
+   474→                          {hasDiscount && (
+   475→                            <span className="text-[11px] text-muted-foreground line-through">
+   476→                              {formatPrice(product.price)}
+   477→                            </span>
+   478→                          )}
+   479→                        </div>
+   480→                        <div className="space-y-1">
+   481→                          <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+   482→                            <span>Sold: {product.soldCount}</span>
+   483→                            <span className="text-orange-600 font-medium">Left: {product.stock}</span>
+   484→                          </div>
+   485→                          <Progress
+   486→                            value={stockPercent}
+   487→                            className="h-1.5 bg-orange-100 [&>div]:bg-orange-500"
+   488→                          />
+   489→                        </div>
+   490→                      </CardContent>
+   491→                    </Card>
+   492→                  );
+   493→                })}
+   494→              </div>
+   495→            </motion.div>
+   496→          </div>
+   497→        </section>
+   498→      )}
+   499→
+   500→      {/* ===== Section 4: Popular Categories ===== */}
+   501→      {categories.length > 0 && (
+   502→        <section className="py-12 md:py-16 bg-muted/30" aria-label="Shop by Category">
+   503→          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+   504→            <motion.div
+   505→              initial={{ opacity: 0, y: 20 }}
+   506→              whileInView={{ opacity: 1, y: 0 }}
+   507→              viewport={{ once: true }}
+   508→              transition={{ duration: 0.5 }}
+   509→            >
+   510→              <SectionTitle title="Shop by Category" />
+   511→              <div className="flex gap-4 overflow-x-auto pb-4 scrollbar-hide snap-x snap-mandatory -mx-4 px-4">
+   512→                {categories.map((cat, idx) => {
+   513→                  const gradientClass = categoryGradients[idx % categoryGradients.length];
+   514→                  return (
+   515→                    <motion.div
+   516→                      key={cat.id}
+   517→                      initial={{ opacity: 0, scale: 0.95 }}
+   518→                      whileInView={{ opacity: 1, scale: 1 }}
+   519→                      viewport={{ once: true }}
+   520→                      transition={{ duration: 0.3, delay: idx * 0.05 }}
+   521→                      className="shrink-0 snap-start"
+   522→                    >
+   523→                      <Card
+   524→                        className="w-36 sm:w-40 md:w-44 overflow-hidden border-border/50 cursor-pointer group transition-all duration-300 hover:shadow-md hover:border-primary/20"
+   525→                        onClick={() => handleCategoryClick(cat.id)}
+   526→                      >
+   527→                        <div className={`relative h-24 sm:h-28 bg-gradient-to-br ${gradientClass} flex items-center justify-center overflow-hidden`}>
+   528→                          {cat.image ? (
+   529→                            <img
+   530→                              src={cat.image}
+   531→                              alt={cat.name}
+   532→                              className="absolute inset-0 h-full w-full object-cover opacity-80 group-hover:scale-105 transition-transform duration-300"
+   533→                            />
+   534→                          ) : (
+   535→                            <>
+   536→                              <div className="absolute -right-4 -top-4 h-20 w-20 rounded-full bg-white/15" />
+   537→                              <div className="absolute -left-2 -bottom-2 h-14 w-14 rounded-full bg-white/10" />
+   538→                            </>
+   539→                          )}
+   540→                          <span className="relative z-10 text-white font-bold text-base sm:text-lg drop-shadow-sm text-center px-2">
+   541→                            {cat.name}
+   542→                          </span>
+   543→                        </div>
+   544→                        <CardContent className="p-3 text-center">
+   545→                          <p className="text-xs text-muted-foreground">
+   546→                            {cat._count?.products ?? 0} Products
+   547→                          </p>
+   548→                        </CardContent>
+   549→                      </Card>
+   550→                    </motion.div>
+   551→                  );
+   552→                })}
+   553→              </div>
+   554→            </motion.div>
+   555→          </div>
+   556→        </section>
+   557→      )}
+   558→
+   559→      {/* ===== Section 5: Featured Products ===== */}
+   560→      {featuredProducts.length > 0 && (
+   561→        <section className="py-12 md:py-16" aria-label="Featured Products">
+   562→          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+   563→            <motion.div
+   564→              initial={{ opacity: 0, y: 20 }}
+   565→              whileInView={{ opacity: 1, y: 0 }}
+   566→              viewport={{ once: true }}
+   567→              transition={{ duration: 0.5 }}
+   568→            >
+   569→              <SectionTitle
+   570→                title="Featured Products"
+   571→                icon={Zap}
+   572→                action={() => navigate('shop')}
+   573→                actionLabel="View All"
+   574→              />
+   575→              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
+   576→                {featuredProducts.map((product, idx) => (
+   577→                  <motion.div
+   578→                    key={product.id}
+   579→                    initial={{ opacity: 0, y: 20 }}
+   580→                    whileInView={{ opacity: 1, y: 0 }}
+   581→                    viewport={{ once: true }}
+   582→                    transition={{ duration: 0.4, delay: idx * 0.05 }}
+   583→                  >
+   584→                    <ProductCard product={product} />
+   585→                  </motion.div>
+   586→                ))}
+   587→              </div>
+   588→            </motion.div>
+   589→          </div>
+   590→        </section>
+   591→      )}
+   592→
+   593→      {/* ===== Section 6: Promo Banner ===== */}
+   594→      <section className="py-12 md:py-16" aria-label="Promotion">
+   595→        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+   596→          <motion.div
+   597→            initial={{ opacity: 0, y: 20 }}
+   598→            whileInView={{ opacity: 1, y: 0 }}
+   599→            viewport={{ once: true }}
+   600→            transition={{ duration: 0.5 }}
+   601→            className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-emerald-600 via-emerald-500 to-teal-500"
+   602→          >
+   603→            {/* Background decoration */}
+   604→            <div className="absolute -right-16 -top-16 h-64 w-64 rounded-full bg-white/10 blur-2xl" />
+   605→            <div className="absolute right-20 -bottom-10 h-40 w-40 rounded-full bg-white/10 blur-2xl" />
+   606→            <div className="absolute left-1/3 top-4 h-20 w-20 rounded-full bg-white/5 blur-xl" />
+   607→            <div
+   608→              className="absolute inset-0"
+   609→              style={{
+   610→                backgroundImage:
+   611→                  'radial-gradient(circle at 80% 80%, rgba(255,255,255,0.1) 0%, transparent 50%), radial-gradient(circle at 20% 20%, rgba(255,255,255,0.08) 0%, transparent 50%)',
+   612→              }}
+   613→            />
+   614→
+   615→            <div className="relative z-10 flex flex-col md:flex-row items-center justify-between gap-6 px-6 py-10 md:px-12 md:py-14">
+   616→              <div className="text-center md:text-left">
+   617→                <Badge className="bg-white/20 text-white border-white/30 backdrop-blur-sm mb-3 text-xs">
+   618→                  <Star className="h-3 w-3 mr-1" />
+   619→                  Special Offer
+   620→                </Badge>
+   621→                <h2 className="text-2xl sm:text-3xl md:text-4xl font-extrabold text-white leading-tight mb-3">
+   622→                  Use code{' '}
+   623→                  <span className="bg-white/20 backdrop-blur-sm px-3 py-1 rounded-lg inline-block">
+   624→                    WELCOME10
+   625→                  </span>
+   626→                </h2>
+   627→                <p className="text-white/85 text-sm sm:text-base max-w-lg">
+   628→                  Get 10% off your first order! Shop from thousands of products and enjoy
+   629→                  amazing discounts on your favorite items.
+   630→                </p>
+   631→              </div>
+   632→              <Button
+   633→                size="lg"
+   634→                className="bg-white text-emerald-700 hover:bg-white/90 font-semibold shadow-lg shadow-black/10 h-12 px-8 text-sm shrink-0"
+   635→                onClick={() => navigate('shop')}
+   636→              >
+   637→                Shop Now
+   638→                <ArrowRight className="ml-2 h-4 w-4" />
+   639→              </Button>
+   640→            </div>
+   641→          </motion.div>
+   642→        </div>
+   643→      </section>
+   644→
+   645→      {/* ===== Section 7: Trending Products ===== */}
+   646→      {trendingProducts.length > 0 && (
+   647→        <section className="py-12 md:py-16 bg-muted/30" aria-label="Trending Products">
+   648→          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+   649→            <motion.div
+   650→              initial={{ opacity: 0, y: 20 }}
+   651→              whileInView={{ opacity: 1, y: 0 }}
+   652→              viewport={{ once: true }}
+   653→              transition={{ duration: 0.5 }}
+   654→            >
+   655→              <SectionTitle
+   656→                title="Trending Now"
+   657→                icon={TrendingUp}
+   658→                action={() => navigate('shop')}
+   659→                actionLabel="View All"
+   660→              />
+   661→              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
+   662→                {trendingProducts.map((product, idx) => (
+   663→                  <motion.div
+   664→                    key={product.id}
+   665→                    initial={{ opacity: 0, y: 20 }}
+   666→                    whileInView={{ opacity: 1, y: 0 }}
+   667→                    viewport={{ once: true }}
+   668→                    transition={{ duration: 0.4, delay: idx * 0.05 }}
+   669→                  >
+   670→                    <ProductCard product={product} />
+   671→                  </motion.div>
+   672→                ))}
+   673→              </div>
+   674→            </motion.div>
+   675→          </div>
+   676→        </section>
+   677→      )}
+   678→
+   679→      {/* ===== Section 8: Best Sellers ===== */}
+   680→      {bestSellerProducts.length > 0 && (
+   681→        <section className="py-12 md:py-16" aria-label="Best Sellers">
+   682→          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+   683→            <motion.div
+   684→              initial={{ opacity: 0, y: 20 }}
+   685→              whileInView={{ opacity: 1, y: 0 }}
+   686→              viewport={{ once: true }}
+   687→              transition={{ duration: 0.5 }}
+   688→            >
+   689→              <SectionTitle
+   690→                title="Best Sellers"
+   691→                icon={Star}
+   692→                action={() => navigate('shop')}
+   693→                actionLabel="View All"
+   694→              />
+   695→              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
+   696→                {bestSellerProducts.map((product, idx) => (
+   697→                  <motion.div
+   698→                    key={product.id}
+   699→                    initial={{ opacity: 0, y: 20 }}
+   700→                    whileInView={{ opacity: 1, y: 0 }}
+   701→                    viewport={{ once: true }}
+   702→                    transition={{ duration: 0.4, delay: idx * 0.05 }}
+   703→                  >
+   704→                    <ProductCard product={product} />
+   705→                  </motion.div>
+   706→                ))}
+   707→              </div>
+   708→            </motion.div>
+   709→          </div>
+   710→        </section>
+   711→      )}
+   712→
+   713→      {/* ===== Section 9: New Arrivals ===== */}
+   714→      {newArrivalProducts.length > 0 && (
+   715→        <section className="py-12 md:py-16 bg-muted/30" aria-label="New Arrivals">
+   716→          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+   717→            <motion.div
+   718→              initial={{ opacity: 0, y: 20 }}
+   719→              whileInView={{ opacity: 1, y: 0 }}
+   720→              viewport={{ once: true }}
+   721→              transition={{ duration: 0.5 }}
+   722→            >
+   723→              <SectionTitle
+   724→                title="New Arrivals"
+   725→                action={() => navigate('shop')}
+   726→                actionLabel="View All"
+   727→              />
+   728→              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
+   729→                {newArrivalProducts.map((product, idx) => (
+   730→                  <motion.div
+   731→                    key={product.id}
+   732→                    initial={{ opacity: 0, y: 20 }}
+   733→                    whileInView={{ opacity: 1, y: 0 }}
+   734→                    viewport={{ once: true }}
+   735→                    transition={{ duration: 0.4, delay: idx * 0.05 }}
+   736→                  >
+   737→                    <ProductCard product={product} />
+   738→                  </motion.div>
+   739→                ))}
+   740→              </div>
+   741→            </motion.div>
+   742→          </div>
+   743→        </section>
+   744→      )}
+   745→
+   746→      {/* ===== Section 10: Newsletter ===== */}
+   747→      <section className="py-12 md:py-16" aria-label="Newsletter">
+   748→        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+   749→          <motion.div
+   750→            initial={{ opacity: 0, y: 20 }}
+   751→            whileInView={{ opacity: 1, y: 0 }}
+   752→            viewport={{ once: true }}
+   753→            transition={{ duration: 0.5 }}
+   754→            className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900"
+   755→          >
+   756→            {/* Background decoration */}
+   757→            <div className="absolute -right-12 -top-12 h-48 w-48 rounded-full bg-emerald-500/10 blur-3xl" />
+   758→            <div className="absolute -left-8 -bottom-8 h-40 w-40 rounded-full bg-teal-500/10 blur-3xl" />
+   759→            <div
+   760→              className="absolute inset-0"
+   761→              style={{
+   762→                backgroundImage:
+   763→                  'radial-gradient(circle at 70% 30%, rgba(16,185,129,0.08) 0%, transparent 50%)',
+   764→              }}
+   765→            />
+   766→
+   767→            <div className="relative z-10 flex flex-col items-center text-center px-6 py-12 md:py-16">
+   768→              <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-500/20 mb-5">
+   769→                <Headphones className="h-7 w-7 text-emerald-400" />
+   770→              </div>
+   771→              <h2 className="text-2xl md:text-3xl font-bold text-white mb-3">
+   772→                Subscribe to our Newsletter
+   773→              </h2>
+   774→              <p className="text-gray-400 text-sm sm:text-base max-w-md mb-8">
+   775→                Get the latest deals, new arrivals, and exclusive offers delivered straight to your inbox. No spam, ever.
+   776→              </p>
+   777→              <div className="flex w-full max-w-md gap-2">
+   778→                <Input
+   779→                  type="email"
+   780→                  placeholder="Enter your email address"
+   781→                  value={email}
+   782→                  onChange={(e) => setEmail(e.target.value)}
+   783→                  onKeyDown={(e) => e.key === 'Enter' && handleSubscribe()}
+   784→                  className="bg-white/10 border-white/20 text-white placeholder:text-gray-500 focus:border-emerald-500 focus:ring-emerald-500/20 h-11"
+   785→                />
+   786→                <Button
+   787→                  onClick={handleSubscribe}
+   788→                  disabled={subscribed}
+   789→                  className="bg-emerald-600 hover:bg-emerald-700 text-white font-semibold h-11 px-6 shrink-0"
+   790→                >
+   791→                  {subscribed ? 'Subscribed!' : 'Subscribe'}
+   792→                </Button>
+   793→              </div>
+   794→              {subscribed && (
+   795→                <motion.p
+   796→                  initial={{ opacity: 0, y: 5 }}
+   797→                  animate={{ opacity: 1, y: 0 }}
+   798→                  className="text-emerald-400 text-sm mt-3"
+   799→                >
+   800→                  ✓ Thank you for subscribing!
+   801→                </motion.p>
+   802→              )}
+   803→            </div>
+   804→          </motion.div>
+   805→        </div>
+   806→      </section>
+   807→
+   808→      {/* ===== Section 11: Brands ===== */}
+   809→      {brands.length > 0 && (
+   810→        <section className="py-12 md:py-16 bg-muted/30" aria-label="Popular Brands">
+   811→          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+   812→            <motion.div
+   813→              initial={{ opacity: 0, y: 20 }}
+   814→              whileInView={{ opacity: 1, y: 0 }}
+   815→              viewport={{ once: true }}
+   816→              transition={{ duration: 0.5 }}
+   817→            >
+   818→              <SectionTitle title="Popular Brands" />
+   819→              <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-6 gap-3 md:gap-4">
+   820→                {brands.map((brand, idx) => (
+   821→                  <motion.div
+   822→                    key={brand.id}
+   823→                    initial={{ opacity: 0, scale: 0.95 }}
+   824→                    whileInView={{ opacity: 1, scale: 1 }}
+   825→                    viewport={{ once: true }}
+   826→                    transition={{ duration: 0.3, delay: idx * 0.03 }}
+   827→                  >
+   828→                    <Card
+   829→                      className="cursor-pointer group transition-all duration-300 hover:shadow-md hover:border-primary/20 border-border/50 overflow-hidden"
+   830→                      onClick={() => {
+   831→                        useUIStore.getState().setBrand(brand.id);
+   832→                        navigate('shop');
+   833→                      }}
+   834→                    >
+   835→                      <div className="flex items-center justify-center p-4 md:p-6 h-24 md:h-28 bg-white">
+   836→                        {brand.logo ? (
+   837→                          <img
+   838→                            src={brand.logo}
+   839→                            alt={brand.name}
+   840→                            className="max-h-12 max-w-full object-contain grayscale group-hover:grayscale-0 opacity-70 group-hover:opacity-100 transition-all duration-300"
+   841→                          />
+   842→                        ) : (
+   843→                          <span className="text-sm font-bold text-muted-foreground group-hover:text-foreground transition-colors duration-300 text-center">
+   844→                            {brand.name}
+   845→                          </span>
+   846→                        )}
+   847→                      </div>
+   848→                    </Card>
+   849→                  </motion.div>
+   850→                ))}
+   851→              </div>
+   852→            </motion.div>
+   853→          </div>
+   854→        </section>
+   855→      )}
+   856→    </div>
+   857→  );
+   858→}

@@ -1,0 +1,646 @@
+     1→'use client';
+     2→import { useState } from 'react';
+     3→import { useCartStore } from '@/store/use-cart';
+     4→import { useUIStore } from '@/store/use-ui';
+     5→import { useAuthStore } from '@/store/use-auth';
+     6→import { Button } from '@/components/ui/button';
+     7→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+     8→import { Input } from '@/components/ui/input';
+     9→import { Label } from '@/components/ui/label';
+    10→import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+    11→import { Checkbox } from '@/components/ui/checkbox';
+    12→import { Separator } from '@/components/ui/separator';
+    13→import { Breadcrumb, BreadcrumbItem, BreadcrumbLink, BreadcrumbList, BreadcrumbSeparator } from '@/components/ui/breadcrumb';
+    14→import { Badge } from '@/components/ui/badge';
+    15→import { ArrowLeft, ArrowRight, Check, CreditCard, Truck, Building, Wallet, Smartphone, ShieldCheck } from 'lucide-react';
+    16→import { toast } from 'sonner';
+    17→import type { Address } from '@/types';
+    18→
+    19→const formatPrice = (price: number) => '৳' + price.toLocaleString();
+    20→
+    21→const STEPS = [
+    22→  { id: 1, label: 'Shipping', icon: Truck },
+    23→  { id: 2, label: 'Payment', icon: CreditCard },
+    24→  { id: 3, label: 'Review', icon: Check },
+    25→] as const;
+    26→
+    27→const PAYMENT_METHODS = [
+    28→  { id: 'cod', label: 'Cash on Delivery', description: 'Pay when you receive your order', icon: Wallet },
+    29→  { id: 'bkash', label: 'bKash', description: 'Mobile banking payment via bKash', icon: Smartphone },
+    30→  { id: 'nagad', label: 'Nagad', description: 'Mobile financial service via Nagad', icon: Smartphone },
+    31→  { id: 'bank_transfer', label: 'Bank Transfer', description: 'Direct bank transfer to our account', icon: Building },
+    32→  { id: 'card', label: 'Card Payment', description: 'Credit or debit card payment', icon: CreditCard },
+    33→] as const;
+    34→
+    35→interface ShippingForm {
+    36→  fullName: string;
+    37→  phone: string;
+    38→  address: string;
+    39→  city: string;
+    40→  state: string;
+    41→  zipCode: string;
+    42→  country: string;
+    43→}
+    44→
+    45→const defaultShippingForm: ShippingForm = {
+    46→  fullName: '',
+    47→  phone: '',
+    48→  address: '',
+    49→  city: '',
+    50→  state: '',
+    51→  zipCode: '',
+    52→  country: 'Bangladesh',
+    53→};
+    54→
+    55→export default function CheckoutPage() {
+    56→  const { items, getSubtotal, getTotalSavings, appliedCoupon, couponDiscount, clearCart } = useCartStore();
+    57→  const { navigate, addresses } = useUIStore();
+    58→  const { user, isAuthenticated } = useAuthStore();
+    59→
+    60→  const [step, setStep] = useState(1);
+    61→  const [shippingForm, setShippingForm] = useState<ShippingForm>(defaultShippingForm);
+    62→  const [selectedAddressId, setSelectedAddressId] = useState<string | null>(null);
+    63→  const [paymentMethod, setPaymentMethod] = useState('cod');
+    64→  const [agreeTerms, setAgreeTerms] = useState(false);
+    65→  const [errors, setErrors] = useState<Partial<Record<keyof ShippingForm, string>>>({});
+    66→  const [placingOrder, setPlacingOrder] = useState(false);
+    67→  const [orderSuccess, setOrderSuccess] = useState(false);
+    68→
+    69→  const subtotal = getSubtotal();
+    70→  const savings = getTotalSavings();
+    71→  const shipping = subtotal >= 2000 ? 0 : 60;
+    72→  const total = subtotal - couponDiscount + shipping;
+    73→
+    74→  const validateShipping = (): boolean => {
+    75→    const newErrors: Partial<Record<keyof ShippingForm, string>> = {};
+    76→    if (!shippingForm.fullName.trim()) newErrors.fullName = 'Full name is required';
+    77→    if (!shippingForm.phone.trim()) newErrors.phone = 'Phone number is required';
+    78→    else if (!/^(?:\+880|01)\d{9,10}$/.test(shippingForm.phone.trim())) newErrors.phone = 'Enter a valid BD phone number';
+    79→    if (!shippingForm.address.trim()) newErrors.address = 'Address is required';
+    80→    if (!shippingForm.city.trim()) newErrors.city = 'City is required';
+    81→    if (!shippingForm.zipCode.trim()) newErrors.zipCode = 'Zip code is required';
+    82→    setErrors(newErrors);
+    83→    return Object.keys(newErrors).length === 0;
+    84→  };
+    85→
+    86→  const handleNext = () => {
+    87→    if (step === 1) {
+    88→      if (!validateShipping()) {
+    89→        toast.error('Please fill in all required fields');
+    90→        return;
+    91→      }
+    92→      setStep(2);
+    93→    } else if (step === 2) {
+    94→      setStep(3);
+    95→    }
+    96→  };
+    97→
+    98→  const handleBack = () => {
+    99→    if (step > 1) setStep(step - 1);
+   100→  };
+   101→
+   102→  const handleSelectAddress = (addr: Address) => {
+   103→    setSelectedAddressId(addr.id);
+   104→    setShippingForm({
+   105→      fullName: addr.fullName,
+   106→      phone: addr.phone,
+   107→      address: addr.address,
+   108→      city: addr.city,
+   109→      state: addr.state || '',
+   110→      zipCode: addr.zipCode || '',
+   111→      country: addr.country,
+   112→    });
+   113→    setErrors({});
+   114→  };
+   115→
+   116→  const handlePlaceOrder = async () => {
+   117→    if (!agreeTerms) {
+   118→      toast.error('Please agree to the Terms & Conditions');
+   119→      return;
+   120→    }
+   121→    setPlacingOrder(true);
+   122→    try {
+   123→      const res = await fetch('/api/orders', {
+   124→        method: 'POST',
+   125→        headers: { 'Content-Type': 'application/json' },
+   126→        body: JSON.stringify({
+   127→          items: items.map((item) => ({
+   128→            productId: item.product.id,
+   129→            quantity: item.quantity,
+   130→            variantId: item.variantId,
+   131→            variantName: item.variantName,
+   132→            price: item.product.discountPrice ?? item.product.price,
+   133→            name: item.product.name,
+   134→            image: item.product.images?.[0]?.url,
+   135→          })),
+   136→          shippingAddress: shippingForm,
+   137→          paymentMethod,
+   138→          couponCode: appliedCoupon?.code,
+   139→          subtotal,
+   140→          discount: couponDiscount,
+   141→          shippingCharge: shipping,
+   142→          total,
+   143→        }),
+   144→      });
+   145→      if (res.ok) {
+   146→        setOrderSuccess(true);
+   147→        clearCart();
+   148→        toast.success('Order placed successfully!');
+   149→      } else {
+   150→        const err = await res.json();
+   151→        toast.error(err.error || 'Failed to place order');
+   152→      }
+   153→    } catch {
+   154→      toast.error('Something went wrong. Please try again.');
+   155→    } finally {
+   156→      setPlacingOrder(false);
+   157→    }
+   158→  };
+   159→
+   160→  const selectedPayment = PAYMENT_METHODS.find((m) => m.id === paymentMethod);
+   161→
+   162→  // Order Success Screen
+   163→  if (orderSuccess) {
+   164→    return (
+   165→      <div className="max-w-lg mx-auto px-4 py-16 text-center">
+   166→        <div className="w-20 h-20 rounded-full bg-emerald-100 flex items-center justify-center mx-auto mb-6">
+   167→          <Check className="h-10 w-10 text-emerald-600" />
+   168→        </div>
+   169→        <h2 className="text-2xl sm:text-3xl font-bold text-foreground mb-3">Order Placed Successfully!</h2>
+   170→        <p className="text-muted-foreground mb-2">
+   171→          Thank you for your purchase. Your order has been received and is being processed.
+   172→        </p>
+   173→        <p className="text-sm text-muted-foreground mb-8">
+   174→          You can track your order status from your orders page.
+   175→        </p>
+   176→        <div className="flex flex-col sm:flex-row gap-3 justify-center">
+   177→          <Button
+   178→            onClick={() => navigate('orders')}
+   179→            className="bg-emerald-600 hover:bg-emerald-700 text-white"
+   180→          >
+   181→            View Orders
+   182→          </Button>
+   183→          <Button variant="outline" onClick={() => navigate('home')}>
+   184→            Continue Shopping
+   185→          </Button>
+   186→        </div>
+   187→      </div>
+   188→    );
+   189→  }
+   190→
+   191→  if (items.length === 0 && !orderSuccess) {
+   192→    return (
+   193→      <div className="max-w-lg mx-auto px-4 py-16 text-center">
+   194→        <h2 className="text-xl font-bold text-foreground mb-3">Your cart is empty</h2>
+   195→        <p className="text-muted-foreground mb-6">Add some items to your cart before checking out.</p>
+   196→        <Button onClick={() => navigate('shop')} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+   197→          Go to Shop
+   198→        </Button>
+   199→      </div>
+   200→    );
+   201→  }
+   202→
+   203→  return (
+   204→    <div className="max-w-6xl mx-auto px-4 py-6">
+   205→      {/* Breadcrumb */}
+   206→      <Breadcrumb className="mb-6">
+   207→        <BreadcrumbList>
+   208→          <BreadcrumbItem>
+   209→            <BreadcrumbLink
+   210→              onClick={() => navigate('home')}
+   211→              className="cursor-pointer hover:text-emerald-600 transition-colors"
+   212→            >
+   213→              Home
+   214→            </BreadcrumbLink>
+   215→          </BreadcrumbItem>
+   216→          <BreadcrumbSeparator />
+   217→          <BreadcrumbItem>
+   218→            <BreadcrumbLink
+   219→              onClick={() => navigate('cart')}
+   220→              className="cursor-pointer hover:text-emerald-600 transition-colors"
+   221→            >
+   222→              Cart
+   223→            </BreadcrumbLink>
+   224→          </BreadcrumbItem>
+   225→          <BreadcrumbSeparator />
+   226→          <BreadcrumbItem>
+   227→            <span className="text-foreground font-medium">Checkout</span>
+   228→          </BreadcrumbItem>
+   229→        </BreadcrumbList>
+   230→      </Breadcrumb>
+   231→
+   232→      <h1 className="text-2xl sm:text-3xl font-bold text-foreground mb-6">Checkout</h1>
+   233→
+   234→      {/* Step Indicator */}
+   235→      <div className="flex items-center justify-center mb-8">
+   236→        {STEPS.map((s, idx) => {
+   237→          const Icon = s.icon;
+   238→          const isActive = step === s.id;
+   239→          const isCompleted = step > s.id;
+   240→          return (
+   241→            <div key={s.id} className="flex items-center">
+   242→              <div className="flex flex-col items-center gap-1.5">
+   243→                <div
+   244→                  className={`w-10 h-10 rounded-full flex items-center justify-center border-2 transition-all ${
+   245→                    isCompleted
+   246→                      ? 'bg-emerald-600 border-emerald-600 text-white'
+   247→                      : isActive
+   248→                        ? 'bg-emerald-50 border-emerald-600 text-emerald-600'
+   249→                        : 'bg-muted border-muted-foreground/20 text-muted-foreground'
+   250→                  }`}
+   251→                >
+   252→                  {isCompleted ? (
+   253→                    <Check className="h-5 w-5" />
+   254→                  ) : (
+   255→                    <Icon className="h-4.5 w-4.5" />
+   256→                  )}
+   257→                </div>
+   258→                <span
+   259→                  className={`text-xs font-medium hidden sm:block ${
+   260→                    isActive ? 'text-emerald-600' : 'text-muted-foreground'
+   261→                  }`}
+   262→                >
+   263→                  {s.label}
+   264→                </span>
+   265→              </div>
+   266→              {idx < STEPS.length - 1 && (
+   267→                <div
+   268→                  className={`w-12 sm:w-24 h-0.5 mx-2 mb-5 sm:mb-0 transition-colors ${
+   269→                    step > s.id ? 'bg-emerald-600' : 'bg-muted-foreground/20'
+   270→                  }`}
+   271→                />
+   272→              )}
+   273→            </div>
+   274→          );
+   275→        })}
+   276→      </div>
+   277→
+   278→      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+   279→        {/* Main Content */}
+   280→        <div className="lg:col-span-2">
+   281→          {/* Step 1: Shipping Address */}
+   282→          {step === 1 && (
+   283→            <Card>
+   284→              <CardHeader>
+   285→                <CardTitle className="flex items-center gap-2">
+   286→                  <Truck className="h-5 w-5 text-emerald-600" />
+   287→                  Shipping Address
+   288→                </CardTitle>
+   289→              </CardHeader>
+   290→              <CardContent className="space-y-6">
+   291→                {/* Saved Addresses */}
+   292→                {isAuthenticated && addresses.length > 0 && (
+   293→                  <div>
+   294→                    <Label className="text-sm font-medium mb-2 block">Saved Addresses</Label>
+   295→                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+   296→                      {addresses.map((addr) => (
+   297→                        <button
+   298→                          key={addr.id}
+   299→                          type="button"
+   300→                          onClick={() => handleSelectAddress(addr)}
+   301→                          className={`text-left p-3 rounded-lg border-2 transition-all hover:border-emerald-300 ${
+   302→                            selectedAddressId === addr.id
+   303→                              ? 'border-emerald-600 bg-emerald-50'
+   304→                              : 'border-border'
+   305→                          }`}
+   306→                        >
+   307→                          {addr.isDefault && (
+   308→                            <Badge className="bg-emerald-100 text-emerald-700 hover:bg-emerald-100 mb-1.5 text-[10px]">
+   309→                              Default
+   310→                            </Badge>
+   311→                          )}
+   312→                          <p className="font-medium text-sm text-foreground">{addr.fullName}</p>
+   313→                          <p className="text-xs text-muted-foreground mt-0.5 line-clamp-2">{addr.address}, {addr.city}</p>
+   314→                          <p className="text-xs text-muted-foreground">{addr.phone}</p>
+   315→                        </button>
+   316→                      ))}
+   317→                    </div>
+   318→                    <Separator className="my-4" />
+   319→                  </div>
+   320→                )}
+   321→
+   322→                {/* Shipping Form */}
+   323→                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+   324→                  <div className="sm:col-span-2">
+   325→                    <Label htmlFor="fullName">Full Name *</Label>
+   326→                    <Input
+   327→                      id="fullName"
+   328→                      value={shippingForm.fullName}
+   329→                      onChange={(e) => { setShippingForm({ ...shippingForm, fullName: e.target.value }); setErrors({ ...errors, fullName: undefined }); }}
+   330→                      placeholder="John Doe"
+   331→                      className={errors.fullName ? 'border-red-500' : ''}
+   332→                    />
+   333→                    {errors.fullName && <p className="text-xs text-red-500 mt-1">{errors.fullName}</p>}
+   334→                  </div>
+   335→                  <div className="sm:col-span-2">
+   336→                    <Label htmlFor="phone">Phone Number *</Label>
+   337→                    <Input
+   338→                      id="phone"
+   339→                      value={shippingForm.phone}
+   340→                      onChange={(e) => { setShippingForm({ ...shippingForm, phone: e.target.value }); setErrors({ ...errors, phone: undefined }); }}
+   341→                      placeholder="01XXXXXXXXX"
+   342→                      className={errors.phone ? 'border-red-500' : ''}
+   343→                    />
+   344→                    {errors.phone && <p className="text-xs text-red-500 mt-1">{errors.phone}</p>}
+   345→                  </div>
+   346→                  <div className="sm:col-span-2">
+   347→                    <Label htmlFor="address">Address *</Label>
+   348→                    <Input
+   349→                      id="address"
+   350→                      value={shippingForm.address}
+   351→                      onChange={(e) => { setShippingForm({ ...shippingForm, address: e.target.value }); setErrors({ ...errors, address: undefined }); }}
+   352→                      placeholder="House No, Road, Area"
+   353→                      className={errors.address ? 'border-red-500' : ''}
+   354→                    />
+   355→                    {errors.address && <p className="text-xs text-red-500 mt-1">{errors.address}</p>}
+   356→                  </div>
+   357→                  <div>
+   358→                    <Label htmlFor="city">City *</Label>
+   359→                    <Input
+   360→                      id="city"
+   361→                      value={shippingForm.city}
+   362→                      onChange={(e) => { setShippingForm({ ...shippingForm, city: e.target.value }); setErrors({ ...errors, city: undefined }); }}
+   363→                      placeholder="Dhaka"
+   364→                      className={errors.city ? 'border-red-500' : ''}
+   365→                    />
+   366→                    {errors.city && <p className="text-xs text-red-500 mt-1">{errors.city}</p>}
+   367→                  </div>
+   368→                  <div>
+   369→                    <Label htmlFor="state">State / Division</Label>
+   370→                    <Input
+   371→                      id="state"
+   372→                      value={shippingForm.state}
+   373→                      onChange={(e) => setShippingForm({ ...shippingForm, state: e.target.value })}
+   374→                      placeholder="Dhaka Division"
+   375→                    />
+   376→                  </div>
+   377→                  <div>
+   378→                    <Label htmlFor="zipCode">Zip Code *</Label>
+   379→                    <Input
+   380→                      id="zipCode"
+   381→                      value={shippingForm.zipCode}
+   382→                      onChange={(e) => { setShippingForm({ ...shippingForm, zipCode: e.target.value }); setErrors({ ...errors, zipCode: undefined }); }}
+   383→                      placeholder="1205"
+   384→                      className={errors.zipCode ? 'border-red-500' : ''}
+   385→                    />
+   386→                    {errors.zipCode && <p className="text-xs text-red-500 mt-1">{errors.zipCode}</p>}
+   387→                  </div>
+   388→                  <div>
+   389→                    <Label htmlFor="country">Country</Label>
+   390→                    <Input
+   391→                      id="country"
+   392→                      value={shippingForm.country}
+   393→                      onChange={(e) => setShippingForm({ ...shippingForm, country: e.target.value })}
+   394→                      placeholder="Bangladesh"
+   395→                    />
+   396→                  </div>
+   397→                </div>
+   398→
+   399→                <div className="flex justify-end pt-2">
+   400→                  <Button
+   401→                    onClick={handleNext}
+   402→                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
+   403→                  >
+   404→                    Continue to Payment
+   405→                    <ArrowRight className="ml-2 h-4 w-4" />
+   406→                  </Button>
+   407→                </div>
+   408→              </CardContent>
+   409→            </Card>
+   410→          )}
+   411→
+   412→          {/* Step 2: Payment Method */}
+   413→          {step === 2 && (
+   414→            <Card>
+   415→              <CardHeader>
+   416→                <CardTitle className="flex items-center gap-2">
+   417→                  <CreditCard className="h-5 w-5 text-emerald-600" />
+   418→                  Payment Method
+   419→                </CardTitle>
+   420→              </CardHeader>
+   421→              <CardContent className="space-y-4">
+   422→                <RadioGroup value={paymentMethod} onValueChange={setPaymentMethod} className="space-y-3">
+   423→                  {PAYMENT_METHODS.map((method) => {
+   424→                    const Icon = method.icon;
+   425→                    return (
+   426→                      <label
+   427→                        key={method.id}
+   428→                        htmlFor={`payment-${method.id}`}
+   429→                        className={`flex items-center gap-4 p-4 rounded-lg border-2 cursor-pointer transition-all hover:border-emerald-300 ${
+   430→                          paymentMethod === method.id
+   431→                            ? 'border-emerald-600 bg-emerald-50/50'
+   432→                            : 'border-border'
+   433→                        }`}
+   434→                      >
+   435→                        <RadioGroupItem value={method.id} id={`payment-${method.id}`} />
+   436→                        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${
+   437→                          paymentMethod === method.id ? 'bg-emerald-100' : 'bg-muted'
+   438→                        }`}>
+   439→                          <Icon className={`h-5 w-5 ${paymentMethod === method.id ? 'text-emerald-600' : 'text-muted-foreground'}`} />
+   440→                        </div>
+   441→                        <div className="flex-1">
+   442→                          <p className="font-medium text-sm text-foreground">{method.label}</p>
+   443→                          <p className="text-xs text-muted-foreground">{method.description}</p>
+   444→                        </div>
+   445→                        {paymentMethod === method.id && (
+   446→                          <Check className="h-5 w-5 text-emerald-600 flex-shrink-0" />
+   447→                        )}
+   448→                      </label>
+   449→                    );
+   450→                  })}
+   451→                </RadioGroup>
+   452→
+   453→                <div className="flex items-center justify-between pt-4">
+   454→                  <Button variant="outline" onClick={handleBack}>
+   455→                    <ArrowLeft className="mr-2 h-4 w-4" />
+   456→                    Back
+   457→                  </Button>
+   458→                  <Button
+   459→                    onClick={handleNext}
+   460→                    className="bg-emerald-600 hover:bg-emerald-700 text-white"
+   461→                  >
+   462→                    Review Order
+   463→                    <ArrowRight className="ml-2 h-4 w-4" />
+   464→                  </Button>
+   465→                </div>
+   466→              </CardContent>
+   467→            </Card>
+   468→          )}
+   469→
+   470→          {/* Step 3: Order Review */}
+   471→          {step === 3 && (
+   472→            <div className="space-y-4">
+   473→              {/* Items */}
+   474→              <Card>
+   475→                <CardHeader className="pb-3">
+   476→                  <CardTitle className="text-base">Order Items ({items.length})</CardTitle>
+   477→                </CardHeader>
+   478→                <CardContent className="space-y-3">
+   479→                  {items.map((item) => {
+   480→                    const price = item.product.discountPrice ?? item.product.price;
+   481→                    const image = item.product.images?.[0]?.url || '/placeholder.png';
+   482→                    return (
+   483→                      <div key={item.product.id + (item.variantId || '')} className="flex gap-3">
+   484→                        <div className="w-14 h-14 rounded-md overflow-hidden bg-muted flex-shrink-0">
+   485→                          <img src={image} alt={item.product.name} className="w-full h-full object-cover" />
+   486→                        </div>
+   487→                        <div className="flex-1 min-w-0">
+   488→                          <p className="text-sm font-medium text-foreground truncate">{item.product.name}</p>
+   489→                          {item.variantName && (
+   490→                            <p className="text-xs text-muted-foreground">{item.variantName}</p>
+   491→                          )}
+   492→                          <p className="text-xs text-muted-foreground mt-0.5">Qty: {item.quantity} × {formatPrice(price)}</p>
+   493→                        </div>
+   494→                        <span className="text-sm font-semibold text-foreground flex-shrink-0">
+   495→                          {formatPrice(price * item.quantity)}
+   496→                        </span>
+   497→                      </div>
+   498→                    );
+   499→                  })}
+   500→                </CardContent>
+   501→              </Card>
+   502→
+   503→              {/* Shipping Address Summary */}
+   504→              <Card>
+   505→                <CardHeader className="pb-3">
+   506→                  <CardTitle className="text-base flex items-center gap-2">
+   507→                    <Truck className="h-4 w-4 text-emerald-600" />
+   508→                    Shipping Address
+   509→                  </CardTitle>
+   510→                </CardHeader>
+   511→                <CardContent>
+   512→                  <p className="text-sm font-medium">{shippingForm.fullName}</p>
+   513→                  <p className="text-sm text-muted-foreground">{shippingForm.phone}</p>
+   514→                  <p className="text-sm text-muted-foreground">{shippingForm.address}</p>
+   515→                  <p className="text-sm text-muted-foreground">
+   516→                    {shippingForm.city}{shippingForm.state ? `, ${shippingForm.state}` : ''} {shippingForm.zipCode}
+   517→                  </p>
+   518→                  <p className="text-sm text-muted-foreground">{shippingForm.country}</p>
+   519→                </CardContent>
+   520→              </Card>
+   521→
+   522→              {/* Payment Method Summary */}
+   523→              <Card>
+   524→                <CardHeader className="pb-3">
+   525→                  <CardTitle className="text-base flex items-center gap-2">
+   526→                    <CreditCard className="h-4 w-4 text-emerald-600" />
+   527→                    Payment Method
+   528→                  </CardTitle>
+   529→                </CardHeader>
+   530→                <CardContent>
+   531→                  <p className="text-sm font-medium">{selectedPayment?.label}</p>
+   532→                  <p className="text-xs text-muted-foreground">{selectedPayment?.description}</p>
+   533→                </CardContent>
+   534→              </Card>
+   535→
+   536→              {/* Terms & Place Order */}
+   537→              <div className="space-y-4">
+   538→                <div className="flex items-start gap-3">
+   539→                  <Checkbox
+   540→                    id="terms"
+   541→                    checked={agreeTerms}
+   542→                    onCheckedChange={(checked) => setAgreeTerms(checked === true)}
+   543→                    className="mt-0.5 data-[state=checked]:bg-emerald-600 data-[state=checked]:border-emerald-600"
+   544→                  />
+   545→                  <Label htmlFor="terms" className="text-sm text-muted-foreground leading-relaxed cursor-pointer">
+   546→                    I agree to the <span className="text-emerald-600 font-medium cursor-pointer hover:underline">Terms & Conditions</span> and{' '}
+   547→                    <span className="text-emerald-600 font-medium cursor-pointer hover:underline">Privacy Policy</span>
+   548→                  </Label>
+   549→                </div>
+   550→
+   551→                <div className="flex items-center gap-2 p-3 rounded-lg bg-emerald-50 border border-emerald-200">
+   552→                  <ShieldCheck className="h-5 w-5 text-emerald-600 flex-shrink-0" />
+   553→                  <p className="text-xs text-emerald-700">
+   554→                    Your payment information is secure and encrypted. We never store your card details.
+   555→                  </p>
+   556→                </div>
+   557→
+   558→                <div className="flex items-center justify-between pt-2">
+   559→                  <Button variant="outline" onClick={handleBack}>
+   560→                    <ArrowLeft className="mr-2 h-4 w-4" />
+   561→                    Back
+   562→                  </Button>
+   563→                  <Button
+   564→                    onClick={handlePlaceOrder}
+   565→                    disabled={placingOrder || !agreeTerms}
+   566→                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-8"
+   567→                  >
+   568→                    {placingOrder ? (
+   569→                      <>
+   570→                        <span className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent" />
+   571→                        Placing Order...
+   572→                      </>
+   573→                    ) : (
+   574→                      <>
+   575→                        Place Order
+   576→                        <ArrowRight className="ml-2 h-4 w-4" />
+   577→                      </>
+   578→                    )}
+   579→                  </Button>
+   580→                </div>
+   581→              </div>
+   582→            </div>
+   583→          )}
+   584→        </div>
+   585→
+   586→        {/* Order Summary Sidebar */}
+   587→        <div className="lg:col-span-1">
+   588→          <Card className="sticky top-4">
+   589→            <CardHeader className="pb-4">
+   590→              <CardTitle className="text-lg">Order Summary</CardTitle>
+   591→            </CardHeader>
+   592→            <CardContent className="space-y-3 text-sm">
+   593→              <div className="space-y-2 max-h-48 overflow-y-auto">
+   594→                {items.map((item) => {
+   595→                  const price = item.product.discountPrice ?? item.product.price;
+   596→                  return (
+   597→                    <div key={item.product.id + (item.variantId || '')} className="flex justify-between gap-2">
+   598→                      <span className="text-muted-foreground truncate flex-1">
+   599→                        {item.product.name} × {item.quantity}
+   600→                      </span>
+   601→                      <span className="font-medium flex-shrink-0">{formatPrice(price * item.quantity)}</span>
+   602→                    </div>
+   603→                  );
+   604→                })}
+   605→              </div>
+   606→
+   607→              <Separator />
+   608→
+   609→              <div className="space-y-2">
+   610→                <div className="flex justify-between">
+   611→                  <span className="text-muted-foreground">Subtotal</span>
+   612→                  <span className="font-medium">{formatPrice(subtotal)}</span>
+   613→                </div>
+   614→                {savings > 0 && (
+   615→                  <div className="flex justify-between text-emerald-600">
+   616→                    <span>Savings</span>
+   617→                    <span>-{formatPrice(savings)}</span>
+   618→                  </div>
+   619→                )}
+   620→                {couponDiscount > 0 && (
+   621→                  <div className="flex justify-between text-emerald-600">
+   622→                    <span>Discount ({appliedCoupon?.code})</span>
+   623→                    <span>-{formatPrice(couponDiscount)}</span>
+   624→                  </div>
+   625→                )}
+   626→                <div className="flex justify-between">
+   627→                  <span className="text-muted-foreground">Shipping</span>
+   628→                  <span className={shipping === 0 ? 'text-emerald-600 font-medium' : 'font-medium'}>
+   629→                    {shipping === 0 ? 'Free' : formatPrice(shipping)}
+   630→                  </span>
+   631→                </div>
+   632→              </div>
+   633→
+   634→              <Separator />
+   635→
+   636→              <div className="flex justify-between text-lg font-bold">
+   637→                <span>Total</span>
+   638→                <span className="text-emerald-700">{formatPrice(total)}</span>
+   639→              </div>
+   640→            </CardContent>
+   641→          </Card>
+   642→        </div>
+   643→      </div>
+   644→    </div>
+   645→  );
+   646→}
